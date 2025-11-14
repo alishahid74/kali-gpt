@@ -290,25 +290,6 @@ pip install -r requirements.txt --force-reinstall
 
 ---
 
-## 📁 Project Structure
-
-```
-kali-gpt/
-├── kali-gpt.py              # Basic version
-├── kali-gpt-advanced.py     # Advanced version ⭐
-├── setup.sh                 # Installation script
-├── requirements.txt         # Python dependencies
-├── config.example.json      # Configuration template
-├── .env                     # API keys (you create this)
-├── README.md               # This file
-└── README_ADVANCED.md      # Advanced documentation
-
-~/.kali-gpt/                # User data (auto-created)
-├── config.json             # Your settings
-├── conversation_history.json
-└── interaction_logs.json
-```
-
 ---
 
 ## 🤝 Contributing
@@ -329,7 +310,7 @@ For educational and authorized security testing only.
 
 ## ⚠️ Disclaimer
 
-This tool is for **authorized security testing and educational purposes only**. Users must ensure proper authorization before testing any systems. The authors are not responsible for misuse.
+This tool is for **authorized security testing and educational purposes only**. Users must ensure proper authorization before testing any systems. The author is not responsible for misuse.
 
 **Use responsibly. Hack ethically. Stay legal.** 🐉
 
