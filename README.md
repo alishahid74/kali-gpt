@@ -301,11 +301,6 @@ Contributions are welcome! Please:
 - Test thoroughly
 
 ---
-
-## 📄 License
-
-For educational and authorized security testing only.
-
 ---
 
 ## ⚠️ Disclaimer
