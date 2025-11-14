@@ -290,8 +290,6 @@ pip install -r requirements.txt --force-reinstall
 
 ---
 
----
-
 ## 🤝 Contributing
 
 Contributions are welcome! Please:
@@ -300,7 +298,6 @@ Contributions are welcome! Please:
 - Update documentation
 - Test thoroughly
 
----
 ---
 
 ## ⚠️ Disclaimer
