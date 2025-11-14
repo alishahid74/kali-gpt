@@ -4,7 +4,7 @@
 
 ---
 
-## 📦 Two Versions Available
+## 📦 Three Versions Available
 
 ### 🔷 Kali GPT (Basic)
 Simple and lightweight AI assistant for:
@@ -13,7 +13,7 @@ Simple and lightweight AI assistant for:
 - Tool explanations
 - Learning pentesting basics
 
-### 🔶 Kali GPT Advanced (Recommended)
+### 🔶 Kali GPT Advanced
 Professional-grade assistant with:
 - ⚡ **Command Execution**: Run and analyze Kali tools directly
 - 🎯 **7 Security Profiles**: Specialized modes (Recon, Exploitation, Web, Wireless, etc.)
@@ -24,6 +24,19 @@ Professional-grade assistant with:
 - 🛡️ **Safety Controls**: Protection against dangerous commands
 
 ➡️ **[Read Advanced Documentation](README_ADVANCED.md)** for full features
+
+### ⭐ Kali GPT Enhanced v2.0 (NEW - Recommended)
+Enterprise-grade penetration testing platform with all advanced features PLUS:
+- 🎯 **Metasploit Framework Integration**: Automated exploitation and payload generation
+- 📊 **Custom Tool Profiles**: Create specialized profiles for your workflow
+- 📈 **Report Generation**: Professional HTML, Markdown, and JSON reports
+- 🎯 **Multi-Target Management**: Track multiple targets with findings and notes
+- 🔌 **Plugin System**: Extensible architecture for custom functionality
+- 👥 **Team Collaboration**: Share sessions and coordinate with team members
+- 🔍 **Automated Vulnerability Scanning**: Integrated Nmap, Nikto, and custom scanners
+- 🌐 **Vulnerability Database Integration**: Real-time CVE, NVD, and ExploitDB lookups
+
+➡️ **[Read Features Documentation](FEATURES.md)** for complete feature list
 
 ---
 
@@ -47,7 +60,11 @@ nano .env
 # Activate environment
 source venv/bin/activate
 
-# Run Advanced version (recommended)
+# Run Enhanced version (recommended for professionals)
+python3 kali-gpt-enhanced.py
+
+# Or run Advanced version
+
 ./kali-gpt-advanced.py
 
 # OR run Basic version
