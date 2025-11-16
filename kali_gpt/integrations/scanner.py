@@ -52,17 +52,18 @@ class ScannerManager:
             return {"success": False, "error": "Nmap not available"}
 
         # Build nmap command based on scan type
+        # -Pn treats all hosts as online (skips ping discovery) - crucial for domains/firewalls
         scan_profiles = {
-            "quick": "-sV -T4",
-            "full": "-sV -sC -A -T4 -p-",
-            "stealth": "-sS -sV -T2",
-            "vuln": "-sV --script vuln",
-            "aggressive": "-A -T4",
-            "comprehensive": "-sS -sV -sC -A -O -p-"
+            "quick": "-Pn -sV -T4",
+            "full": "-Pn -sV -sC -A -T4 -p-",
+            "stealth": "-Pn -sS -sV -T2",
+            "vuln": "-Pn -sV --script vuln",
+            "aggressive": "-Pn -A -T4",
+            "comprehensive": "-Pn -sS -sV -sC -A -O -p-"
         }
 
         base_cmd = "nmap"
-        nmap_options = scan_profiles.get(scan_type, "-sV")
+        nmap_options = scan_profiles.get(scan_type, "-Pn -sV")
 
         if ports:
             nmap_options += f" -p {ports}"
@@ -71,7 +72,9 @@ class ScannerManager:
             nmap_options += f" {options}"
 
         # Output to XML for parsing
-        output_file = self.scans_dir / f"nmap_{target.replace('.', '_')}_{scan_type}.xml"
+        # Replace dots and colons for safe filenames
+        safe_target = target.replace('.', '_').replace(':', '_')
+        output_file = self.scans_dir / f"nmap_{safe_target}_{scan_type}.xml"
         command = f"{base_cmd} {nmap_options} -oX {output_file} {target}"
 
         # Execute scan
@@ -92,6 +95,15 @@ class ScannerManager:
 
     def _parse_nmap_xml(self, xml_file: str) -> Dict:
         """Parse Nmap XML output"""
+        import os
+
+        # Check if XML file exists
+        if not os.path.exists(xml_file):
+            return {
+                "success": False,
+                "error": f"Nmap XML file not found: {xml_file}. Scan may have failed."
+            }
+
         try:
             tree = ET.parse(xml_file)
             root = tree.getroot()
