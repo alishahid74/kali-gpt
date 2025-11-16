@@ -1,6 +1,7 @@
 """Plugin Manager"""
 
 import importlib
+import importlib.util
 import json
 import sys
 from pathlib import Path
