@@ -52,17 +52,18 @@ class ScannerManager:
             return {"success": False, "error": "Nmap not available"}
 
         # Build nmap command based on scan type
+        # -Pn treats all hosts as online (skips ping discovery) - crucial for domains/firewalls
         scan_profiles = {
-            "quick": "-sV -T4",
-            "full": "-sV -sC -A -T4 -p-",
-            "stealth": "-sS -sV -T2",
-            "vuln": "-sV --script vuln",
-            "aggressive": "-A -T4",
-            "comprehensive": "-sS -sV -sC -A -O -p-"
+            "quick": "-Pn -sV -T4",
+            "full": "-Pn -sV -sC -A -T4 -p-",
+            "stealth": "-Pn -sS -sV -T2",
+            "vuln": "-Pn -sV --script vuln",
+            "aggressive": "-Pn -A -T4",
+            "comprehensive": "-Pn -sS -sV -sC -A -O -p-"
         }
 
         base_cmd = "nmap"
-        nmap_options = scan_profiles.get(scan_type, "-sV")
+        nmap_options = scan_profiles.get(scan_type, "-Pn -sV")
 
         if ports:
             nmap_options += f" -p {ports}"
@@ -71,7 +72,9 @@ class ScannerManager:
             nmap_options += f" {options}"
 
         # Output to XML for parsing
-        output_file = self.scans_dir / f"nmap_{target.replace('.', '_')}_{scan_type}.xml"
+        # Replace dots and colons for safe filenames
+        safe_target = target.replace('.', '_').replace(':', '_')
+        output_file = self.scans_dir / f"nmap_{safe_target}_{scan_type}.xml"
         command = f"{base_cmd} {nmap_options} -oX {output_file} {target}"
 
         # Execute scan
@@ -92,6 +95,15 @@ class ScannerManager:
 
     def _parse_nmap_xml(self, xml_file: str) -> Dict:
         """Parse Nmap XML output"""
+        import os
+
+        # Check if XML file exists
+        if not os.path.exists(xml_file):
+            return {
+                "success": False,
+                "error": f"Nmap XML file not found: {xml_file}. Scan may have failed."
+            }
+
         try:
             tree = ET.parse(xml_file)
             root = tree.getroot()
@@ -111,6 +123,8 @@ class ScannerManager:
                         "hostname": "",
                         "state": "up",
                         "os": "",
+                        "mac": "",
+                        "mac_vendor": "",
                         "ports": []
                     }
 
@@ -118,6 +132,12 @@ class ScannerManager:
                     address = host.find('.//address[@addrtype="ipv4"]')
                     if address is not None:
                         host_info["ip"] = address.get('addr', '')
+
+                    # Get MAC address
+                    mac_address = host.find('.//address[@addrtype="mac"]')
+                    if mac_address is not None:
+                        host_info["mac"] = mac_address.get('addr', '')
+                        host_info["mac_vendor"] = mac_address.get('vendor', '')
 
                     # Get hostname
                     hostname = host.find('.//hostname')
@@ -144,8 +164,29 @@ class ScannerManager:
                                 "state": state.get('state', ''),
                                 "service": service.get('name', '') if service is not None else '',
                                 "version": service.get('version', '') if service is not None else '',
-                                "product": service.get('product', '') if service is not None else ''
+                                "product": service.get('product', '') if service is not None else '',
+                                "extrainfo": service.get('extrainfo', '') if service is not None else '',
+                                "ostype": service.get('ostype', '') if service is not None else '',
+                                "cpe": [],
+                                "full_info": ""
                             }
+
+                            # Get CPE information
+                            if service is not None:
+                                for cpe in service.findall('cpe'):
+                                    if cpe.text:
+                                        port_info["cpe"].append(cpe.text)
+
+                            # Build full service info string (like standard nmap output)
+                            info_parts = []
+                            if port_info["product"]:
+                                info_parts.append(port_info["product"])
+                            if port_info["version"]:
+                                info_parts.append(port_info["version"])
+                            if port_info["extrainfo"]:
+                                info_parts.append(f"({port_info['extrainfo']})")
+
+                            port_info["full_info"] = " ".join(info_parts) if info_parts else port_info["service"]
 
                             host_info["ports"].append(port_info)
 

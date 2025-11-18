@@ -88,24 +88,75 @@ class MenuDisplay:
             return
 
         hosts = results.get("hosts", [])
+        summary = results.get("summary", {})
+
+        # Display summary
+        self.console.print(f"\n[bold cyan]Scan Summary:[/bold cyan]")
+        self.console.print(f"  Total Hosts: {summary.get('total_hosts', 0)}")
+        self.console.print(f"  Open Ports: {summary.get('total_open_ports', 0)}\n")
 
         for host in hosts:
-            host_panel = Table(show_header=True, box=box.SIMPLE)
-            host_panel.add_column("Port", style="cyan", width=8)
+            # Build host info
+            host_info = []
+            host_info.append(f"[bold]IP Address:[/bold] {host.get('ip', 'N/A')}")
+
+            if host.get('hostname'):
+                host_info.append(f"[bold]Hostname:[/bold] {host.get('hostname')}")
+
+            if host.get('mac'):
+                mac_str = host.get('mac')
+                if host.get('mac_vendor'):
+                    mac_str += f" ({host.get('mac_vendor')})"
+                host_info.append(f"[bold]MAC Address:[/bold] {mac_str}")
+
+            if host.get('os'):
+                host_info.append(f"[bold]OS:[/bold] {host.get('os')}")
+
+            # Create port table with enhanced info
+            host_panel = Table(show_header=True, box=box.SIMPLE, title="\n".join(host_info))
+            host_panel.add_column("Port", style="cyan", width=10)
             host_panel.add_column("State", style="green", width=10)
-            host_panel.add_column("Service", style="yellow")
-            host_panel.add_column("Version", style="white")
+            host_panel.add_column("Service", style="yellow", width=12)
+            host_panel.add_column("Version/Details", style="white", no_wrap=False)
 
             for port in host.get("ports", []):
+                # Use full_info if available, otherwise build from parts
+                version_info = port.get("full_info", "")
+                if not version_info:
+                    version_parts = []
+                    if port.get("product"):
+                        version_parts.append(port.get("product"))
+                    if port.get("version"):
+                        version_parts.append(port.get("version"))
+                    if port.get("extrainfo"):
+                        version_parts.append(f"({port.get('extrainfo')})")
+                    version_info = " ".join(version_parts)
+
                 host_panel.add_row(
                     f"{port.get('port')}/{port.get('protocol')}",
                     port.get("state", ""),
                     port.get("service", ""),
-                    port.get("version", "")
+                    version_info
                 )
 
-            title = f"Host: {host.get('ip')} ({host.get('hostname', 'N/A')}) - OS: {host.get('os', 'Unknown')}"
+            title = f"🔍 Nmap Scan Results - {host.get('ip')}"
             self.console.print(Panel(host_panel, title=title, border_style="green"))
+
+            # Show CPE information if available (for detailed scans)
+            cpe_list = []
+            for port in host.get("ports", []):
+                if port.get("cpe"):
+                    for cpe in port.get("cpe"):
+                        if cpe not in cpe_list:
+                            cpe_list.append(cpe)
+
+            if cpe_list:
+                self.console.print("\n[bold]CPE Identifiers:[/bold]")
+                for cpe in cpe_list[:5]:  # Show first 5 CPEs
+                    self.console.print(f"  • {cpe}")
+                if len(cpe_list) > 5:
+                    self.console.print(f"  ... and {len(cpe_list) - 5} more")
+                self.console.print("")
 
     def display_vulnerability_info(self, cve_data: Dict):
         """Display CVE/vulnerability information"""
