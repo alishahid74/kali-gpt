@@ -37,13 +37,18 @@ echo "✓ Dependencies installed"
 echo "[4/6] 🔑 Setting up configuration files..."
 # Create .env if it doesn't exist
 if [ ! -f ".env" ]; then
-    cat > .env << 'EOF'
+    if [ -f ".env.example" ]; then
+        cp .env.example .env
+        echo "✓ Created .env from .env.example - PLEASE ADD YOUR API KEY"
+    else
+        cat > .env << 'EOF'
 # OpenAI API Configuration
 OPENAI_API_KEY=your-api-key-here
 
 # Get your API key from: https://platform.openai.com/api-keys
 EOF
-    echo "✓ Created .env file - PLEASE ADD YOUR API KEY"
+        echo "✓ Created .env file - PLEASE ADD YOUR API KEY"
+    fi
     echo "  Edit .env and replace 'your-api-key-here' with your OpenAI API key"
 else
     echo "✓ .env file already exists"
