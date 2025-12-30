@@ -53,7 +53,15 @@ class AIService:
             self._model = self._get_config("model", "gpt-4o")
         else:  # ollama
             self.ollama_host = os.getenv("OLLAMA_HOST", "http://localhost:11434")
-            self._model = os.getenv("OLLAMA_MODEL", self._get_config("ollama_model", "llama3.2"))
+            # Auto-detect model if not specified
+            env_model = os.getenv("OLLAMA_MODEL")
+            config_model = self._get_config("ollama_model")
+            if env_model:
+                self._model = env_model
+            elif config_model:
+                self._model = config_model
+            else:
+                self._model = self._select_ollama_model()
             self.client = None
         
         print(f"[*] AI Service initialized with provider: {self.provider}")
@@ -83,6 +91,52 @@ class AIService:
             return response.status_code == 200
         except Exception:
             return False
+
+    def _get_available_ollama_models(self) -> list:
+        """Get list of available Ollama models"""
+        try:
+            host = os.getenv("OLLAMA_HOST", "http://localhost:11434")
+            response = httpx.get(f"{host}/api/tags", timeout=5)
+            if response.status_code == 200:
+                data = response.json()
+                return [m.get("name", "") for m in data.get("models", [])]
+        except Exception:
+            pass
+        return []
+
+    def _select_ollama_model(self) -> str:
+        """Select the best available Ollama model"""
+        preferred_models = [
+            "llama3.2", "llama3.2:latest", "llama3.2:3b",
+            "llama3.1", "llama3.1:latest", "llama3.1:8b",
+            "llama3", "llama3:latest",
+            "llama2", "llama2:latest",
+            "mistral", "mistral:latest",
+            "codellama", "codellama:latest",
+            "phi3", "phi3:latest",
+            "gemma2", "gemma2:latest",
+            "qwen2", "qwen2:latest",
+        ]
+        
+        available = self._get_available_ollama_models()
+        
+        if not available:
+            print("[!] No Ollama models found! Run: ollama pull llama3.2")
+            return "llama3.2"  # Return default, will fail but with clear error
+        
+        print(f"[*] Available Ollama models: {', '.join(available)}")
+        
+        # Try preferred models first
+        for model in preferred_models:
+            if model in available:
+                return model
+            # Check partial match (e.g., "llama3.2" matches "llama3.2:3b-instruct-q4_K_M")
+            for avail in available:
+                if model.split(":")[0] in avail:
+                    return avail
+        
+        # Return first available model
+        return available[0]
 
     def _get_config(self, key: str, default: Any = None) -> Any:
         """Get config value with fallback"""
@@ -175,8 +229,24 @@ class AIService:
                 timeout=120  # Longer timeout for local inference
             )
             
+            if response.status_code == 404:
+                # Model not found - try to find available models
+                available = self._get_available_ollama_models()
+                if available:
+                    raise Exception(
+                        f"Model '{self._model}' not found.\n"
+                        f"Available models: {', '.join(available)}\n"
+                        f"Run: ollama pull {self._model}\n"
+                        f"Or set OLLAMA_MODEL={available[0]}"
+                    )
+                else:
+                    raise Exception(
+                        f"No models installed. Run:\n"
+                        f"  ollama pull llama3.2"
+                    )
+            
             if response.status_code != 200:
-                raise Exception(f"Ollama error: {response.status_code}")
+                raise Exception(f"Ollama error: {response.status_code} - {response.text}")
             
             data = response.json()
             return data.get("message", {}).get("content", "")
