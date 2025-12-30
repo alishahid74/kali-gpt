@@ -1,0 +1,54 @@
+[project]
+name = "kali-gpt-v3"
+version = "3.0.0"
+description = "Autonomous AI-Powered Penetration Testing Assistant"
+authors = [
+    {name = "Kali-GPT Team"}
+]
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+keywords = ["pentesting", "security", "ai", "autonomous", "red-team"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Information Technology",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Security",
+]
+
+dependencies = [
+    "rich>=13.0.0",
+    "httpx>=0.25.0",
+    "aiohttp>=3.9.0",
+    "asyncio>=3.4.3",
+    "pydantic>=2.0.0",
+    "python-dotenv>=1.0.0",
+    "aiosqlite>=0.19.0",
+    "jinja2>=3.1.0",
+    "pyyaml>=6.0.0",
+    "networkx>=3.0",
+    "prompt_toolkit>=3.0.0",
+]
+
+[project.optional-dependencies]
+openai = ["openai>=1.0.0"]
+all = [
+    "openai>=1.0.0",
+    "anthropic>=0.18.0",
+]
+
+[project.scripts]
+kali-gpt = "kali_gpt_v3.main:main"
+
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
