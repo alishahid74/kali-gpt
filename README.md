@@ -4,6 +4,51 @@
 
 ---
 
+## 🚀 NEW: Version 3.0 - Autonomous AI Pentester
+
+### What's New in v3.0
+
+| Feature | Description |
+|---------|-------------|
+| 🤖 **Autonomous Agent** | ReAct pattern - AI reasons and acts like a human pentester |
+| 🧠 **FREE Local LLM** | Ollama support - no API costs, private, offline capable |
+| 📚 **MITRE ATT&CK** | Follows established penetration testing methodology |
+| ⛓️ **Smart Tool Chains** | Automatic tool selection based on discoveries |
+| 💾 **Persistent Memory** | Learns from past engagements |
+
+### Quick Start v3.0
+
+```bash
+# 1. Install Ollama (free local AI)
+curl -fsSL https://ollama.com/install.sh | sh
+ollama pull llama3.2
+ollama serve
+
+# 2. Run autonomous mode
+python kali-gpt-autonomous.py
+
+# Or with a target
+python kali-gpt-autonomous.py --target 192.168.1.1
+```
+
+### New Files in v3.0
+
+```
+kali_gpt/
+├── agents/                  # NEW: Autonomous agent
+│   └── autonomous_agent.py  # ReAct pattern implementation
+├── llm/                     # NEW: Multi-LLM support
+│   ├── ollama_provider.py   # Free local AI
+│   └── openai_provider.py   # Cloud fallback
+├── knowledge/               # NEW: Security knowledge base
+│   ├── mitre_attack.py      # ATT&CK framework
+│   └── tool_chains.py       # Smart tool selection
+└── memory/                  # NEW: Persistent learning
+    └── store.py             # SQLite database
+```
+
+---
+
 ## 📦 Three Versions Available
 
 ### 🔷 Kali GPT (Basic)
