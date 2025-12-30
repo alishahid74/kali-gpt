@@ -6,46 +6,280 @@
 
 ## 🚀 NEW: Version 3.0 - Autonomous AI Pentester
 
+**🔥 MAJOR UPDATE: World's first truly autonomous AI penetration testing tool!**
+
 ### What's New in v3.0
 
 | Feature | Description |
 |---------|-------------|
-| 🤖 **Autonomous Agent** | ReAct pattern - AI reasons and acts like a human pentester |
-| 🧠 **FREE Local LLM** | Ollama support - no API costs, private, offline capable |
-| 📚 **MITRE ATT&CK** | Follows established penetration testing methodology |
-| ⛓️ **Smart Tool Chains** | Automatic tool selection based on discoveries |
-| 💾 **Persistent Memory** | Learns from past engagements |
+| 🤖 **Autonomous ReAct Agent** | AI that thinks and acts like a human pentester - Observe → Think → Act → Learn |
+| 🧠 **FREE Local LLM (Ollama)** | No API costs! Private, offline capable, runs on your machine |
+| 📚 **MITRE ATT&CK Framework** | 50+ techniques mapped, follows established methodology |
+| ⛓️ **Intelligent Tool Chaining** | Auto-selects next tool based on discoveries (HTTP→whatweb→nikto→nuclei) |
+| 💾 **Persistent Memory** | SQLite database remembers past engagements and learns patterns |
+| 🔄 **Multi-LLM Support** | Switch between Ollama (free) and OpenAI (cloud) anytime |
 
-### Quick Start v3.0
+---
+
+### 🤖 Autonomous Agent - How It Works
+
+The agent follows the **ReAct (Reasoning + Acting)** pattern:
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    AUTONOMOUS AGENT LOOP                     │
+├─────────────────────────────────────────────────────────────┤
+│                                                              │
+│   ┌──────────┐    ┌──────────┐    ┌──────────┐    ┌──────┐ │
+│   │ OBSERVE  │───▶│  THINK   │───▶│   ACT    │───▶│LEARN │ │
+│   │          │    │          │    │          │    │      │ │
+│   │ Gather   │    │ Analyze  │    │ Execute  │    │Update│ │
+│   │ current  │    │ & decide │    │ tools    │    │memory│ │
+│   │ state    │    │ next step│    │          │    │      │ │
+│   └──────────┘    └──────────┘    └──────────┘    └──────┘ │
+│        ▲                                              │      │
+│        └──────────────────────────────────────────────┘      │
+│                                                              │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**Pentesting Phases (PTES Methodology):**
+1. **Reconnaissance** → nmap, whois, theHarvester, amass
+2. **Scanning** → nmap, masscan, rustscan
+3. **Enumeration** → gobuster, nikto, enum4linux, smbmap
+4. **Vulnerability Analysis** → nuclei, nikto, searchsploit
+5. **Exploitation** → metasploit, sqlmap, hydra
+6. **Post-Exploitation** → linpeas, winpeas, bloodhound
+7. **Reporting** → Auto-generated reports
+
+---
+
+### 🧠 FREE Local AI with Ollama
+
+**No more API costs!** Run AI completely locally:
 
 ```bash
-# 1. Install Ollama (free local AI)
+# Install Ollama (one-time)
+curl -fsSL https://ollama.com/install.sh | sh
+
+# Download model (one-time, ~4GB)
+ollama pull llama3.2
+
+# Start Ollama server
+ollama serve
+```
+
+**Supported Models:**
+| Model | Size | Best For |
+|-------|------|----------|
+| `llama3.2` | 4GB | General use (recommended) |
+| `llama3.2:70b` | 40GB | Best quality |
+| `codellama` | 7GB | Code/command generation |
+| `mistral` | 4GB | Good reasoning |
+| `phi3` | 2GB | Fast, lightweight |
+
+**Switch between providers anytime:**
+```python
+# In code
+ai_service.switch_provider("ollama")  # Free, local
+ai_service.switch_provider("openai")  # Cloud, paid
+```
+
+---
+
+### 📚 MITRE ATT&CK Integration
+
+All actions mapped to MITRE ATT&CK framework:
+
+```
+TACTIC                    TECHNIQUES                      TOOLS
+─────────────────────────────────────────────────────────────────
+Reconnaissance     T1595 Active Scanning          nmap, masscan
+                   T1592 Gather Host Info         whatweb, wappalyzer
+                   T1589 Gather Identity Info     theHarvester
+                   
+Initial Access     T1190 Exploit Public App       sqlmap, nuclei
+                   T1133 External Services        hydra, medusa
+                   
+Discovery          T1046 Network Service Scan     nmap -sV
+                   T1087 Account Discovery        enum4linux
+                   T1082 System Info Discovery    linpeas
+                   
+Credential Access  T1110 Brute Force              hydra, john
+                   T1003 Credential Dumping       mimikatz
+```
+
+---
+
+### ⛓️ Intelligent Tool Chaining
+
+Auto-selects tools based on what's discovered:
+
+```
+Discovery                    Auto-Chain
+─────────────────────────────────────────────────────────────────
+Port 80/443 open      →     whatweb → nikto → gobuster → nuclei
+Port 22 open          →     ssh-audit → hydra (if weak)
+Port 445 open (SMB)   →     enum4linux → smbmap → crackmapexec
+WordPress detected    →     wpscan → nuclei wordpress templates
+Login page found      →     hydra → sqlmap (if parameters)
+```
+
+**Example Chain:**
+```
+[+] nmap found port 80 open
+    └─→ whatweb identifies WordPress 5.8
+        └─→ wpscan enumerates users/plugins
+            └─→ nuclei scans for CVEs
+                └─→ searchsploit finds exploits
+```
+
+---
+
+### 💾 Persistent Memory System
+
+Learns from every engagement:
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    MEMORY DATABASE                           │
+├─────────────────────────────────────────────────────────────┤
+│  📊 Engagements        │ Past targets, phases reached       │
+│  🔓 Vulnerabilities    │ CVEs found, exploitation success   │
+│  🎯 Action Patterns    │ What worked on similar targets     │
+│  📈 Success Rates      │ Tool effectiveness per target type │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**Features:**
+- Remembers successful techniques per target fingerprint
+- Suggests actions based on similar past engagements
+- Tracks vulnerability discovery patterns
+- Reports on tool effectiveness
+
+---
+
+### 🚀 Quick Start v3.0
+
+**Option 1: With Ollama (FREE - Recommended)**
+```bash
+# 1. Install Ollama
 curl -fsSL https://ollama.com/install.sh | sh
 ollama pull llama3.2
 ollama serve
 
-# 2. Run autonomous mode
+# 2. Install dependencies
+pip install -r requirements.txt
+
+# 3. Run autonomous mode
+python kali-gpt-autonomous.py
+```
+
+**Option 2: With OpenAI (Cloud)**
+```bash
+# 1. Set API key
+export OPENAI_API_KEY=your-key-here
+
+# 2. Run
+python kali-gpt-autonomous.py --provider openai
+```
+
+**Command Line Options:**
+```bash
+python kali-gpt-autonomous.py --help
+
+Options:
+  -t, --target TARGET      Target for immediate scan
+  -p, --provider PROVIDER  AI provider: ollama, openai, auto
+  -m, --model MODEL        Model name (e.g., llama3.2, gpt-4o)
+```
+
+---
+
+### 📁 New Project Structure
+
+```
+kali-gpt/
+├── kali-gpt.py                    # Original basic version
+├── kali-gpt-advanced.py           # Original advanced version
+├── kali-gpt-enhanced.py           # Original enhanced version
+├── kali-gpt-autonomous.py         # 🆕 NEW: Autonomous mode
+│
+├── kali_gpt/
+│   ├── modules/
+│   │   ├── ai_service.py          # 🔄 ENHANCED: Now supports Ollama + OpenAI
+│   │   ├── command_executor.py    # Original
+│   │   ├── profile_manager.py     # Original
+│   │   └── report_generator.py    # Original
+│   │
+│   ├── agents/                    # 🆕 NEW FOLDER
+│   │   ├── autonomous_agent.py    # ReAct agent implementation
+│   │   └── enhanced_agent.py      # MITRE ATT&CK integration
+│   │
+│   ├── llm/                       # 🆕 NEW FOLDER
+│   │   ├── base.py                # LLM abstraction layer
+│   │   ├── ollama_provider.py     # Free local LLM
+│   │   ├── openai_provider.py     # Cloud LLM
+│   │   └── factory.py             # Auto-select best provider
+│   │
+│   ├── knowledge/                 # 🆕 NEW FOLDER
+│   │   ├── mitre_attack.py        # 50+ ATT&CK techniques
+│   │   └── tool_chains.py         # Smart tool selection rules
+│   │
+│   ├── memory/                    # 🆕 NEW FOLDER
+│   │   └── store.py               # SQLite persistent storage
+│   │
+│   └── integrations/              # Original
+│       ├── metasploit.py
+│       ├── scanner.py
+│       └── vulnerability_db.py
+```
+
+---
+
+### 🎮 Usage Examples
+
+**1. Start Autonomous Test:**
+```bash
 python kali-gpt-autonomous.py
 
-# Or with a target
-python kali-gpt-autonomous.py --target 192.168.1.1
+# Menu:
+# 1. 🎯 Autonomous Test - AI decides everything
+# 2. 👣 Step-by-Step - You confirm each action
+# 3. 🔧 Quick Scan - Single nmap scan
+# 4. ❓ Ask AI - Security questions
 ```
 
-### New Files in v3.0
+**2. Target Specific IP:**
+```bash
+python kali-gpt-autonomous.py --target 192.168.1.100
+```
 
+**3. Use Specific Model:**
+```bash
+python kali-gpt-autonomous.py --provider ollama --model codellama
 ```
-kali_gpt/
-├── agents/                  # NEW: Autonomous agent
-│   └── autonomous_agent.py  # ReAct pattern implementation
-├── llm/                     # NEW: Multi-LLM support
-│   ├── ollama_provider.py   # Free local AI
-│   └── openai_provider.py   # Cloud fallback
-├── knowledge/               # NEW: Security knowledge base
-│   ├── mitre_attack.py      # ATT&CK framework
-│   └── tool_chains.py       # Smart tool selection
-└── memory/                  # NEW: Persistent learning
-    └── store.py             # SQLite database
+
+**4. Switch Provider Mid-Session:**
 ```
+> Menu option 6 (Provider)
+> Current: ollama (llama3.2)
+> Switch to: openai
+> [+] Switched to OpenAI (gpt-4o)
+```
+
+---
+
+### 📊 Status & Roadmap
+
+| Phase | Status | Description |
+|-------|--------|-------------|
+| Phase 1 | ✅ Complete | Autonomous Agent + Local LLM |
+| Phase 2 | ✅ Complete | MITRE ATT&CK + Tool Chaining |
+| Phase 3 | ✅ Complete | Report Generation |
+| Phase 4 | 🔄 In Progress | Attack Tree Visualization |
+| Phase 5 | ⏳ Planned | Fine-tuned Security LLM |
+| Phase 6 | ⏳ Planned | Multi-Agent Collaboration |
 
 ---
 
