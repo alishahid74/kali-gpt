@@ -158,17 +158,38 @@ async def run_autonomous(ai_service: AIService, target: str):
     # Create wrapper for tool execution that uses existing CommandExecutor
     class ToolExecutorWrapper:
         def __init__(self):
-            self.executor = CommandExecutor()
+            # Create a simple config object for CommandExecutor
+            class SimpleConfig:
+                def get(self, key, default=None):
+                    defaults = {
+                        "command_timeout": 300,
+                        "allow_dangerous": False,
+                    }
+                    return defaults.get(key, default)
+            
+            try:
+                self.executor = CommandExecutor(SimpleConfig())
+            except TypeError:
+                # If CommandExecutor doesn't need config, use without
+                self.executor = CommandExecutor()
         
         async def execute(self, tool: str, command: str = None, **kwargs):
             cmd = command or tool
-            result = self.executor.execute(cmd)
-            return {
-                "success": result.get("returncode", 1) == 0,
-                "output": result.get("stdout", "") + result.get("stderr", ""),
-                "error": result.get("error"),
-                "findings": []
-            }
+            try:
+                result = self.executor.execute(cmd)
+                return {
+                    "success": result.get("returncode", 1) == 0,
+                    "output": result.get("stdout", "") + result.get("stderr", ""),
+                    "error": result.get("error"),
+                    "findings": []
+                }
+            except Exception as e:
+                return {
+                    "success": False,
+                    "output": "",
+                    "error": str(e),
+                    "findings": []
+                }
     
     # Create wrapper for LLM that uses existing AIService
     class LLMWrapper:
