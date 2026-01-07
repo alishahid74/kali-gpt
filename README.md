@@ -196,47 +196,6 @@ Options:
 
 ---
 
-### 📁 Project Structure
-
-```
-kali-gpt/
-├── kali-gpt.py                    # Original basic version
-├── kali-gpt-advanced.py           # Original advanced version
-├── kali-gpt-enhanced.py           # Original enhanced version
-├── kali-gpt-autonomous.py         # 🆕 NEW: Autonomous mode
-│
-├── kali_gpt/
-│   ├── modules/
-│   │   ├── ai_service.py          # 🔄 ENHANCED: Now supports Ollama + OpenAI
-│   │   ├── command_executor.py    # Original
-│   │   ├── profile_manager.py     # Original
-│   │   └── report_generator.py    # Original
-│   │
-│   ├── agents/                    # 🆕 NEW FOLDER
-│   │   ├── autonomous_agent.py    # ReAct agent implementation
-│   │   └── enhanced_agent.py      # MITRE ATT&CK integration
-│   │
-│   ├── llm/                       # 🆕 NEW FOLDER
-│   │   ├── base.py                # LLM abstraction layer
-│   │   ├── ollama_provider.py     # Free local LLM
-│   │   ├── openai_provider.py     # Cloud LLM
-│   │   └── factory.py             # Auto-select best provider
-│   │
-│   ├── knowledge/                 # 🆕 NEW FOLDER
-│   │   ├── mitre_attack.py        # 50+ ATT&CK techniques
-│   │   └── tool_chains.py         # Smart tool selection rules
-│   │
-│   ├── memory/                    # 🆕 NEW FOLDER
-│   │   └── store.py               # SQLite persistent storage
-│   │
-│   └── integrations/              # Original
-│       ├── metasploit.py
-│       ├── scanner.py
-│       └── vulnerability_db.py
-```
-
----
-
 ### 🎮 Usage Examples
 
 **1. Start Autonomous Test:**
