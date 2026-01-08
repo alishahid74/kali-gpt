@@ -31,7 +31,7 @@ The agent follows the **ReAct (Reasoning + Acting)** pattern:
 ├─────────────────────────────────────────────────────────────┤
 │                                                             │
 │   ┌──────────┐    ┌──────────┐    ┌──────────┐    ┌──────┐  │
-│   │ OBSERVE  │───▶│  THINK  │───▶│   ACT   │───▶│LEARN │  │
+│   │ OBSERVE  │───▶│  THINK  │───▶│   ACT   │───▶│LEARN   │  │
 │   │          │    │          │    │          │    │      │  │
 │   │ Gather   │    │ Analyze  │    │ Execute  │    │Update│  │
 │   │ current  │    │ & decide │    │ tools    │    │memory│  │
