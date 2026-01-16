@@ -1,56 +1,169 @@
 #!/usr/bin/env python3
 """
-Kali-GPT v3 - Autonomous Mode
+Kali-GPT Autonomous Mode
 
-Run autonomous penetration testing with ReAct agent.
-Uses local LLM (Ollama) by default - FREE and PRIVATE!
+AI-powered penetration testing with local LLMs.
+Supports uncensored models for better results.
 
 Usage:
-    python kali-gpt-autonomous.py
-    python kali-gpt-autonomous.py --target 192.168.1.1
-    python kali-gpt-autonomous.py --provider ollama --model llama3.2
+    python3 kali-gpt-autonomous.py
+    python3 kali-gpt-autonomous.py --model kali-pentester
+    python3 kali-gpt-autonomous.py -t 192.168.1.1
 """
 
 import asyncio
 import argparse
-import sys
 import os
-from pathlib import Path
+import subprocess
+import shutil
+import httpx
+from datetime import datetime
 from dotenv import load_dotenv
 
-# Load environment variables
 load_dotenv()
 
-# Rich terminal UI
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 from rich.prompt import Prompt, Confirm
-from rich.progress import Progress, SpinnerColumn, TextColumn
 from rich.markdown import Markdown
 from rich import box
 
-# Import modules
 from kali_gpt.modules.ai_service import AIService
-from kali_gpt.modules.command_executor import CommandExecutor
 from kali_gpt.agents.autonomous_agent import (
-    AutonomousAgent, 
-    AgentState, 
-    AgentAction,
-    AgentObservation,
-    AgentThought,
-    EngagementContext,
-    PentestPhase
+    AutonomousAgent, AgentState, AgentAction,
+    AgentObservation, AgentThought, EngagementContext, PentestPhase
 )
-from kali_gpt.knowledge.mitre_attack import get_mitre_kb, Tactic
+from kali_gpt.knowledge.mitre_attack import get_mitre_kb
 from kali_gpt.knowledge.tool_chains import ToolChainBuilder
 from kali_gpt.memory.store import MemoryStore
 
 console = Console()
 
+# Tools that are OK to run
+VALID_TOOLS = {
+    'nmap', 'masscan', 'unicornscan', 'hping3', 'arping',
+    'nikto', 'gobuster', 'dirb', 'ffuf', 'wfuzz', 'feroxbuster',
+    'whatweb', 'wpscan', 'joomscan', 'droopescan', 'wapiti',
+    'dig', 'host', 'nslookup', 'dnsrecon', 'dnsenum', 'fierce',
+    'curl', 'wget', 'http',
+    'whois', 'theharvester', 'amass', 'sublist3r', 'subfinder',
+    'sqlmap', 'commix', 'xsser', 'searchsploit', 'msfconsole',
+    'hydra', 'medusa', 'john', 'hashcat', 'crunch', 'cewl',
+    'enum4linux', 'smbclient', 'smbmap', 'crackmapexec', 'rpcclient',
+    'netcat', 'nc', 'ncat', 'socat', 'telnet',
+    'tcpdump', 'tshark',
+    'nuclei', 'httpx', 'katana', 'gau', 'waybackurls',
+    'sslscan', 'sslyze', 'testssl',
+    'python', 'python3', 'perl', 'ruby', 'bash', 'sh',
+    'cat', 'grep', 'awk', 'sed', 'head', 'tail', 'wc',
+    'ls', 'find', 'file', 'strings', 'base64',
+    'ping', 'traceroute', 'netstat', 'ss',
+}
 
-def display_banner():
-    """Display the application banner"""
+# Don't try to run these (GUI apps)
+GUI_TOOLS = {'burpsuite', 'wireshark', 'zenmap', 'armitage', 'maltego', 'zaproxy'}
+
+# If the LLM output starts with these, it's probably a description not a command
+DESCRIPTION_WORDS = {
+    'scan', 'review', 'conduct', 'perform', 'execute', 'run', 'use', 'start',
+    'open', 'launch', 'check', 'analyze', 'identify', 'gather', 'collect',
+    'find', 'search', 'look', 'examine', 'investigate', 'assess', 'test',
+    'verify', 'confirm', 'enumerate', 'discover', 'detect', 'exploit',
+    'attempt', 'try', 'begin', 'initiate', 'continue', 'move', 'next',
+    'now', 'then', 'should', 'would', 'could', 'let', 'need', 'want',
+    'going', 'will', 'shall', 'the', 'a', 'an'
+}
+
+# Models that won't refuse security queries
+UNCENSORED_MODELS = [
+    'kali-pentester', 'kali-redteam',
+    'dolphin-llama3', 'dolphin-mistral', 'dolphin-mixtral',
+    'openhermes', 'nous-hermes', 'wizard-vicuna-uncensored',
+]
+
+# Track current model globally
+CURRENT_MODEL = None
+CURRENT_PROVIDER = None
+
+
+def get_ollama_models():
+    """Get list of models from Ollama"""
+    try:
+        r = httpx.get("http://localhost:11434/api/tags", timeout=5)
+        if r.status_code == 200:
+            return [m.get("name", "") for m in r.json().get("models", [])]
+    except:
+        pass
+    return []
+
+
+def pick_best_model(models):
+    """Auto-select the best uncensored model"""
+    for preferred in UNCENSORED_MODELS:
+        for m in models:
+            if preferred in m.lower():
+                return m
+    return models[0] if models else "llama3.2"
+
+
+def is_uncensored(model_name):
+    """Check if model is uncensored"""
+    m = model_name.lower()
+    return any(u in m for u in UNCENSORED_MODELS)
+
+
+def is_valid_command(action):
+    """Check if this looks like a real command"""
+    if not action or len(action) < 3:
+        return False
+    first = action.split()[0].lower().strip('`"\'')
+    if first in VALID_TOOLS:
+        return True
+    if first in DESCRIPTION_WORDS:
+        return False
+    return False
+
+
+def add_target_if_missing(cmd, target):
+    """Make sure target is in the command"""
+    if not target or not cmd:
+        return cmd
+    if target in cmd:
+        return cmd
+    
+    tool = cmd.split()[0].lower()
+    
+    if tool == 'nmap':
+        return f"{cmd} {target}"
+    elif tool == 'nikto' and '-h' not in cmd:
+        return f"{cmd} -h https://{target}"
+    elif tool == 'gobuster' and '-u' not in cmd:
+        return f"gobuster dir -u https://{target} -w /usr/share/wordlists/dirb/common.txt -k -q"
+    elif tool == 'whatweb':
+        return f"{cmd} https://{target}"
+    elif tool == 'curl' and 'http' not in cmd:
+        return f"{cmd} https://{target}"
+    elif tool in ['dig', 'whois', 'host', 'dnsrecon', 'sslscan']:
+        return f"{cmd} {target}"
+    
+    return cmd
+
+
+def get_timeout(tool):
+    """Get timeout for a tool"""
+    t = tool.lower().split()[0]
+    if t in ['nmap', 'masscan']:
+        return 300
+    elif t in ['nikto', 'wpscan', 'sqlmap', 'nuclei']:
+        return 180
+    elif t in ['gobuster', 'dirb', 'ffuf']:
+        return 180
+    return 90
+
+
+def show_banner():
+    """Show the banner"""
     banner = """
 [bold cyan]
 ██╗  ██╗ █████╗ ██╗     ██╗       ██████╗ ██████╗ ████████╗
@@ -61,375 +174,525 @@ def display_banner():
 ╚═╝  ╚═╝╚═╝  ╚═╝╚══════╝╚═╝       ╚═════╝ ╚═╝        ╚═╝   
 [/bold cyan]
 [bold green]    🤖 AUTONOMOUS MODE - v3.0[/bold green]
-[dim]    AI-Powered Penetration Testing Assistant[/dim]
-
-[yellow]New Features:[/yellow]
-  • 🧠 ReAct Agent - Thinks and acts like a human pentester
-  • 🔓 Local LLM - Free AI with Ollama (no API costs!)
-  • 📚 MITRE ATT&CK - Follows established methodology
-  • ⛓️  Smart Tool Chains - Automatic tool selection
-  • 💾 Memory - Learns from past engagements
+[dim]    AI-Powered Penetration Testing[/dim]
 """
     console.print(banner)
 
 
-def display_menu():
-    """Display main menu"""
+def show_menu():
+    """Show main menu"""
     table = Table(title="Main Menu", box=box.ROUNDED, show_header=False)
-    table.add_column("Option", style="cyan", width=5)
-    table.add_column("Action", style="white")
-    table.add_column("Description", style="dim")
+    table.add_column("", style="cyan", width=5)
+    table.add_column("", style="white")
+    table.add_column("", style="dim")
     
-    menu_items = [
-        ("1", "🎯 Autonomous Test", "Start autonomous pentest"),
-        ("2", "👣 Step-by-Step", "Interactive guided testing"),
-        ("3", "🔧 Quick Scan", "Run a quick scan"),
-        ("4", "❓ Ask AI", "Ask security questions"),
-        ("5", "📊 Statistics", "View past engagements"),
-        ("6", "⚙️  Provider", "Switch AI provider"),
-        ("0", "🚪 Exit", "Exit application"),
+    items = [
+        ("1", "🎯 Autonomous Test", "AI-driven pentest"),
+        ("2", "👣 Step-by-Step", "Guided testing"),
+        ("3", "🔧 Quick Scan", "Just nmap"),
+        ("4", "❓ Ask AI", "Chat mode"),
+        ("5", "📊 Statistics", "Past engagements"),
+        ("6", "⚙️  Models", "Select model"),
+        ("0", "🚪 Exit", ""),
     ]
     
-    for opt, action, desc in menu_items:
+    for opt, action, desc in items:
         table.add_row(opt, action, desc)
     
     console.print(table)
 
 
-async def display_state(state: AgentState):
-    """Display agent state change"""
+# Agent callbacks
+async def on_state_change(state):
     icons = {
-        AgentState.IDLE: "⏸️",
-        AgentState.THINKING: "🤔",
-        AgentState.PLANNING: "📋",
-        AgentState.EXECUTING: "⚡",
-        AgentState.OBSERVING: "👁️",
-        AgentState.COMPLETED: "✅",
+        AgentState.IDLE: "⏸️", AgentState.THINKING: "🤔",
+        AgentState.PLANNING: "📋", AgentState.EXECUTING: "⚡",
+        AgentState.OBSERVING: "👁️", AgentState.COMPLETED: "✅",
         AgentState.ERROR: "❌"
     }
-    console.print(f"\n{icons.get(state, '❓')} [bold]State:[/bold] {state.value}")
+    console.print(f"\n{icons.get(state, '❓')} [bold]{state.value}[/bold]")
 
 
-async def display_thought(thought: AgentThought):
-    """Display agent thought"""
+async def on_thought(thought):
     panel = Panel(
         f"[cyan]{thought.situation_analysis}[/cyan]\n\n"
         f"[yellow]Action:[/yellow] {thought.chosen_action}\n"
         f"[dim]Confidence: {thought.confidence:.0%}[/dim]",
-        title="🧠 Thinking",
-        border_style="cyan"
+        title="🧠 Thinking", border_style="cyan"
     )
     console.print(panel)
 
 
-async def confirm_action(action: AgentAction) -> bool:
-    """Confirm before executing action"""
+async def on_action(action):
     console.print(f"\n[yellow]⚠️  Confirm Action[/yellow]")
     console.print(f"  Tool: [cyan]{action.tool}[/cyan]")
-    console.print(f"  Command: [white]{action.command}[/white]")
-    console.print(f"  Risk: [red]{action.risk_level}[/red]")
-    
+    console.print(f"  Command: [white]`{action.command}`[/white]")
+    risk = 'red' if action.risk_level in ['high', 'critical'] else 'yellow'
+    console.print(f"  Risk: [{risk}]{action.risk_level}[/]")
     return Confirm.ask("Execute?", default=True)
 
 
-async def display_observation(observation: AgentObservation):
-    """Display observation/result"""
-    status = "[green]✓[/green]" if observation.success else "[red]✗[/red]"
-    output = observation.output[:300] + "..." if len(observation.output) > 300 else observation.output
-    
+async def on_observation(obs):
+    status = "[green]✓[/green]" if obs.success else "[red]✗[/red]"
+    output = obs.output[:1500] + "..." if len(obs.output) > 1500 else obs.output
+    err = f"\n[red]Error: {obs.error}[/red]" if obs.error else ""
+    cmd = obs.action.command if obs.action else "?"
     console.print(Panel(
-        f"{status} {observation.action.tool}\n\n[dim]{output}[/dim]",
+        f"{status} Command: [cyan]{cmd}[/cyan]{err}\n\n{output}",
         title="📊 Result",
-        border_style="green" if observation.success else "red"
+        border_style="green" if obs.success else "red"
     ))
 
 
-async def run_autonomous(ai_service: AIService, target: str):
-    """Run autonomous penetration test"""
-    console.print(f"\n[bold green]🎯 Starting autonomous test on {target}[/bold green]\n")
+async def run_pentest(ai_service, target):
+    """Run autonomous pentest"""
+    global CURRENT_MODEL
     
-    # Initialize components
+    target = target.replace("http://", "").replace("https://", "").rstrip("/")
+    console.print(f"\n[bold green]🎯 Starting pentest on {target}[/bold green]\n")
+    
+    info = ai_service.get_provider_info()
+    model = CURRENT_MODEL or info.get('model', '')
+    uncensored = is_uncensored(model)
+    
+    if uncensored:
+        console.print(f"[green]🐬 Using: {model}[/green]\n")
+    else:
+        console.print(f"[yellow]⚠️ Using: {model} (standard model)[/yellow]")
+        console.print(f"[dim]Tip: Use option 6 to pick an uncensored model[/dim]\n")
+    
     memory = MemoryStore()
     await memory.initialize()
     
-    mitre_kb = get_mitre_kb()
-    tool_chain_builder = ToolChainBuilder()
-    
-    # Create wrapper for tool execution that uses existing CommandExecutor
-    class ToolExecutorWrapper:
-        def __init__(self):
-            # Create a simple config object for CommandExecutor
-            class SimpleConfig:
-                def get(self, key, default=None):
-                    defaults = {
-                        "command_timeout": 300,
-                        "allow_dangerous": False,
-                    }
-                    return defaults.get(key, default)
+    # Tool executor
+    class ToolRunner:
+        def __init__(self, target):
+            self.target = target
+            self.ran = set()
+        
+        async def execute(self, tool, command=None, **kw):
+            cmd = (command or tool).strip().strip('`')
+            cmd = add_target_if_missing(cmd, self.target)
+            
+            if not is_valid_command(cmd):
+                console.print(f"[red]✗ Bad command: {cmd[:50]}[/red]")
+                return {"success": False, "output": "", "error": "Invalid", "findings": []}
+            
+            tool_name = cmd.split()[0].lower()
+            
+            if tool_name in GUI_TOOLS:
+                return {"success": False, "output": "", "error": "GUI tool", "findings": []}
+            
+            if not shutil.which(tool_name):
+                console.print(f"[yellow]⚠️ Not installed: {tool_name}[/yellow]")
+                return {"success": False, "output": "", "error": "Not found", "findings": []}
+            
+            if cmd in self.ran:
+                return {"success": True, "output": "Already ran", "error": None, "findings": []}
+            
+            self.ran.add(cmd)
+            console.print(f"[cyan]$ {cmd}[/cyan]")
+            
+            timeout = get_timeout(tool_name)
             
             try:
-                self.executor = CommandExecutor(SimpleConfig())
-            except TypeError:
-                # If CommandExecutor doesn't need config, use without
-                self.executor = CommandExecutor()
-        
-        async def execute(self, tool: str, command: str = None, **kwargs):
-            cmd = command or tool
-            try:
-                result = self.executor.execute(cmd)
-                return {
-                    "success": result.get("returncode", 1) == 0,
-                    "output": result.get("stdout", "") + result.get("stderr", ""),
-                    "error": result.get("error"),
-                    "findings": []
-                }
+                r = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=timeout)
+                out = r.stdout + r.stderr
+                ok = r.returncode == 0 or len(out.strip()) > 10
+                return {"success": ok, "output": out or "Done", "error": None, "findings": []}
+            except subprocess.TimeoutExpired:
+                return {"success": False, "output": "", "error": f"Timeout ({timeout}s)", "findings": []}
             except Exception as e:
-                return {
-                    "success": False,
-                    "output": "",
-                    "error": str(e),
-                    "findings": []
-                }
+                return {"success": False, "output": "", "error": str(e), "findings": []}
     
-    # Create wrapper for LLM that uses existing AIService
+    # LLM wrapper
     class LLMWrapper:
-        def __init__(self, ai_service):
-            self.ai = ai_service
-            self.config = type('Config', (), {'system_prompt': None})()
+        def __init__(self, ai, target, uncensored=False):
+            self.ai = ai
+            self.target = target
+            self.config = type('C', (), {'system_prompt': None})()
+            self.history = set()
+            self.fb_idx = 0
+            
+            # Fallback commands - all have target
+            self.fallbacks = [
+                f"nmap -sV -sC -T4 {target}",
+                f"curl -sIk https://{target}",
+                f"whatweb https://{target}",
+                f"dig {target} ANY +short",
+                f"whois {target}",
+                f"gobuster dir -u https://{target} -w /usr/share/wordlists/dirb/common.txt -k -q -t 30",
+                f"nikto -h https://{target} -maxtime 60",
+                f"curl -sk https://{target}/robots.txt",
+                f"curl -sk https://{target}/sitemap.xml",
+                f"nmap --script=vuln -p80,443 {target}",
+                f"nmap --script=http-enum -p80,443 {target}",
+                f"host {target}",
+                f"sslscan {target}",
+                f"curl -sk https://{target}/.git/HEAD",
+                f"curl -sk https://{target}/admin",
+                f"nmap -sV -p21,22,25,80,443,3306,8080 {target}",
+            ]
+            
+            self.prompt = f"""You are a penetration tester. Target: {target}
+
+IMPORTANT: Every command must include the target {target}
+
+Format:
+THOUGHT: Brief analysis
+ACTION: Complete command with {target}
+
+Examples:
+THOUGHT: Scan ports
+ACTION: nmap -sV -sC -T4 {target}
+
+THOUGHT: Check web
+ACTION: whatweb https://{target}
+
+THOUGHT: Find dirs
+ACTION: gobuster dir -u https://{target} -w /usr/share/wordlists/dirb/common.txt -k -q
+
+WRONG:
+ACTION: nmap           <- missing target
+ACTION: Scan ports     <- description, not command
+
+Always include {target} in your command!"""
         
-        async def generate(self, prompt: str, **kwargs):
-            response = self.ai.ask(prompt, system_prompt=kwargs.get('system_prompt'))
+        async def generate(self, prompt, **kw):
+            resp = self.ai.ask(prompt, system_prompt=self.prompt)
             
-            # Parse ReAct format
-            thought, action, action_input = None, None, None
-            for line in response.split('\n'):
-                if line.upper().startswith('THOUGHT:'):
+            thought, action = None, None
+            
+            for line in resp.split('\n'):
+                line = line.strip()
+                up = line.upper()
+                
+                if up.startswith('THOUGHT:'):
                     thought = line.split(':', 1)[1].strip()
-                elif line.upper().startswith('ACTION:'):
-                    action = line.split(':', 1)[1].strip()
-                elif 'ACTION_INPUT' in line.upper() or 'ACTION INPUT' in line.upper():
-                    action_input = line.split(':', 1)[1].strip() if ':' in line else None
+                
+                elif up.startswith('ACTION:') and 'INPUT' not in up:
+                    potential = line.split(':', 1)[1].strip().strip('`"\'')
+                    potential = add_target_if_missing(potential, self.target)
+                    
+                    if is_valid_command(potential) and len(potential.split()) > 1:
+                        action = potential
+                        console.print(f"[green]✓ {action.split()[0]}[/green]")
+                    else:
+                        w = potential.split()[0] if potential else "?"
+                        console.print(f"[yellow]✗ Incomplete: {w}[/yellow]")
             
-            return type('Response', (), {
-                'content': response,
-                'thought': thought,
+            # Fallback
+            if not action:
+                while self.fb_idx < len(self.fallbacks):
+                    action = self.fallbacks[self.fb_idx]
+                    self.fb_idx += 1
+                    if action not in self.history:
+                        console.print(f"[yellow]→ Fallback: {action.split()[0]}[/yellow]")
+                        thought = f"Running: {action.split()[0]}"
+                        break
+                else:
+                    action = None
+            
+            # Skip dupes
+            if action and action in self.history:
+                console.print(f"[dim]Duplicate, next...[/dim]")
+                while self.fb_idx < len(self.fallbacks):
+                    action = self.fallbacks[self.fb_idx]
+                    self.fb_idx += 1
+                    if action not in self.history:
+                        break
+                else:
+                    action = None
+            
+            if action:
+                self.history.add(action)
+            
+            return type('R', (), {
+                'content': resp,
+                'thought': thought or "...",
                 'action': action,
-                'action_input': action_input
+                'action_input': self.target
             })()
         
-        def set_system_prompt(self, name: str):
-            pass
-        
+        def set_system_prompt(self, n): pass
         def clear_history(self):
             self.ai.clear_history()
+            self.history = set()
+            self.fb_idx = 0
     
-    llm_wrapper = LLMWrapper(ai_service)
-    tool_executor = ToolExecutorWrapper()
+    llm = LLMWrapper(ai_service, target, uncensored)
+    runner = ToolRunner(target)
     
-    # Create agent
-    agent = AutonomousAgent(
-        llm=llm_wrapper,
-        tool_executor=tool_executor
-    )
+    agent = AutonomousAgent(llm=llm, tool_executor=runner)
+    agent.on_state_change = on_state_change
+    agent.on_thought = on_thought
+    agent.on_action = on_action
+    agent.on_observation = on_observation
     
-    # Set callbacks
-    agent.on_state_change = display_state
-    agent.on_thought = display_thought
-    agent.on_action = confirm_action
-    agent.on_observation = display_observation
-    
-    # Initialize engagement
     await agent.initialize(target=target, scope=[target])
+    agent.max_iterations = 20
     
-    # Create engagement in memory
-    engagement_id = await memory.create_engagement(target)
+    eid = await memory.create_engagement(target)
     
     try:
-        # Run agent
-        console.print("[yellow]Running autonomous agent... (Press Ctrl+C to stop)[/yellow]\n")
-        context = await agent.run(autonomous=False)  # With confirmation
-        
-        # Show results
-        display_results(context)
-        
-        # Save to memory
-        await memory.update_engagement(
-            engagement_id,
-            phase_reached=context.current_phase.value,
-            total_actions=len(context.actions_taken),
-            vulnerabilities_found=len(context.discovered_vulnerabilities)
-        )
-        
+        console.print("[yellow]Running... (Ctrl+C to stop)[/yellow]\n")
+        ctx = await agent.run(autonomous=False)
+        show_results(ctx)
+        await memory.update_engagement(eid,
+            phase_reached=ctx.current_phase.value,
+            total_actions=len(ctx.actions_taken),
+            vulnerabilities_found=len(ctx.discovered_vulnerabilities))
     except KeyboardInterrupt:
-        console.print("\n[yellow]Stopped by user[/yellow]")
+        console.print("\n[yellow]Stopped[/yellow]")
         agent.stop()
 
 
-def display_results(context: EngagementContext):
-    """Display engagement results"""
-    summary = f"""
-[bold]Target:[/bold] {context.target}
-[bold]Phase:[/bold] {context.current_phase.value}
-[bold]Actions:[/bold] {len(context.actions_taken)}
+def show_results(ctx):
+    """Show pentest results"""
+    s = f"""
+[bold]Target:[/bold] {ctx.target}
+[bold]Phase:[/bold] {ctx.current_phase.value}
+[bold]Actions:[/bold] {len(ctx.actions_taken)}
 
-[cyan]Discovered:[/cyan]
-  • Hosts: {len(context.discovered_hosts)}
-  • Services: {len(context.discovered_services)}
-  • Vulnerabilities: {len(context.discovered_vulnerabilities)}
+[cyan]Found:[/cyan]
+  • Hosts: {len(ctx.discovered_hosts)}
+  • Services: {len(ctx.discovered_services)}
+  • Vulns: {len(ctx.discovered_vulnerabilities)}
 """
-    console.print(Panel(summary, title="📊 Results", border_style="green"))
+    console.print(Panel(s, title="📊 Results", border_style="green"))
 
 
-async def quick_scan(ai_service: AIService):
-    """Run a quick scan"""
-    target = Prompt.ask("Enter target")
+async def quick_scan(ai):
+    """Quick nmap scan"""
+    target = Prompt.ask("Target")
     if not target:
         return
     
-    scan_type = Prompt.ask(
-        "Scan type",
-        choices=["quick", "full", "stealth"],
-        default="quick"
-    )
+    target = target.replace("http://", "").replace("https://", "").rstrip("/")
     
-    commands = {
+    scan = Prompt.ask("Type", choices=["quick", "full", "stealth", "vuln"], default="quick")
+    
+    cmds = {
         "quick": f"nmap -T4 -F {target}",
         "full": f"nmap -sV -sC -p- {target}",
-        "stealth": f"nmap -sS -T2 -f {target}"
+        "stealth": f"nmap -sS -T2 -f {target}",
+        "vuln": f"nmap --script=vuln {target}"
     }
     
-    command = commands[scan_type]
-    console.print(f"\n[cyan]Running: {command}[/cyan]\n")
+    cmd = cmds[scan]
+    timeout = 600 if scan == "full" else 300
     
-    executor = CommandExecutor()
-    result = executor.execute(command)
+    console.print(f"\n[cyan]$ {cmd}[/cyan]\n")
     
-    console.print(Panel(
-        result.get("stdout", result.get("error", "No output")),
-        title="Scan Results"
-    ))
+    try:
+        with console.status("[green]Scanning...[/green]"):
+            r = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=timeout)
+        
+        out = r.stdout + r.stderr or "Done"
+        console.print(Panel(out, title="Results", border_style="green" if r.returncode == 0 else "red"))
+        
+        if Confirm.ask("Analyze with AI?", default=True):
+            with console.status("[cyan]Analyzing...[/cyan]"):
+                analysis = ai.analyze_output(cmd, out)
+            console.print(Panel(Markdown(analysis), title="🧠 Analysis", border_style="cyan"))
     
-    # AI analysis
-    if Confirm.ask("Analyze with AI?", default=True):
-        analysis = ai_service.analyze_output(command, result.get("stdout", ""))
-        console.print(Panel(Markdown(analysis), title="🧠 AI Analysis", border_style="cyan"))
+    except subprocess.TimeoutExpired:
+        console.print("[red]Timeout[/red]")
+    except Exception as e:
+        console.print(f"[red]Error: {e}[/red]")
 
 
-async def ask_ai(ai_service: AIService):
-    """Interactive AI Q&A"""
-    console.print("\n[cyan]Ask any security question (type 'back' to return)[/cyan]\n")
+async def ask_ai(ai):
+    """Chat with AI"""
+    console.print("\n[cyan]Ask anything ('back' to return)[/cyan]\n")
     
     while True:
-        question = Prompt.ask("[bold]You[/bold]")
-        
-        if question.lower() in ['back', 'exit', 'quit']:
+        q = Prompt.ask("[bold]You[/bold]")
+        if q.lower() in ['back', 'exit', 'quit', 'q']:
             break
-        
-        if not question:
+        if not q.strip():
             continue
         
-        with console.status("Thinking..."):
-            response = ai_service.ask(question)
-        
-        console.print(Panel(Markdown(response), title="🤖 Kali-GPT", border_style="cyan"))
+        with console.status("..."):
+            r = ai.ask(q)
+        console.print(Panel(Markdown(r), title="🤖 AI", border_style="cyan"))
 
 
 async def show_stats():
-    """Show engagement statistics"""
-    memory = MemoryStore()
-    await memory.initialize()
+    """Show stats"""
+    mem = MemoryStore()
+    await mem.initialize()
+    stats = await mem.get_statistics()
     
-    stats = await memory.get_statistics()
-    
-    table = Table(title="📊 Statistics", box=box.ROUNDED)
-    table.add_column("Metric", style="cyan")
-    table.add_column("Value", style="green")
-    
-    table.add_row("Total Engagements", str(stats.get('total_engagements', 0)))
-    table.add_row("Vulnerabilities Found", str(stats.get('total_vulnerabilities', 0)))
-    table.add_row("Actions Logged", str(stats.get('total_actions', 0)))
-    
-    console.print(table)
+    t = Table(title="📊 Stats", box=box.ROUNDED)
+    t.add_column("", style="cyan")
+    t.add_column("", style="green")
+    t.add_row("Engagements", str(stats.get('total_engagements', 0)))
+    t.add_row("Vulns Found", str(stats.get('total_vulnerabilities', 0)))
+    t.add_row("Actions", str(stats.get('total_actions', 0)))
+    console.print(t)
 
 
-def switch_provider(ai_service: AIService):
-    """Switch AI provider"""
-    info = ai_service.get_provider_info()
+def model_menu(ai):
+    """Model selection"""
+    global CURRENT_MODEL, CURRENT_PROVIDER
     
-    console.print(f"\n[cyan]Current: {info['provider']} ({info['model']})[/cyan]")
-    console.print(f"  Ollama available: {'✅' if info['ollama_available'] else '❌'}")
-    console.print(f"  OpenAI available: {'✅' if info['openai_available'] else '❌'}")
-    
-    new_provider = Prompt.ask("Switch to", choices=["ollama", "openai"], default=info['provider'])
-    
-    try:
-        ai_service.switch_provider(new_provider)
-        console.print(f"[green]Switched to {new_provider}[/green]")
-    except Exception as e:
-        console.print(f"[red]Failed: {e}[/red]")
+    while True:
+        info = ai.get_provider_info()
+        cur_model = CURRENT_MODEL or info.get('model', '?')
+        cur_prov = CURRENT_PROVIDER or info.get('provider', '?')
+        
+        models = get_ollama_models()
+        
+        console.print(f"\n[bold cyan]{'='*60}[/bold cyan]")
+        console.print(f"[bold]                    ⚙️  MODEL SELECTION[/bold]")
+        console.print(f"[bold cyan]{'='*60}[/bold cyan]\n")
+        
+        console.print(f"  Current: [green]{cur_prov} → {cur_model}[/green]")
+        if is_uncensored(cur_model):
+            console.print(f"  [green]🐬 Uncensored[/green]")
+        else:
+            console.print(f"  [yellow]⚠️ Standard[/yellow]")
+        
+        console.print(f"\n  Ollama: {'[green]✅[/green]' if models else '[red]❌[/red]'}")
+        console.print(f"  OpenAI: {'[green]✅[/green]' if info.get('openai_available') else '[yellow]⚠️[/yellow]'}")
+        
+        all_models = []
+        
+        if models:
+            console.print(f"\n[bold]Ollama Models:[/bold]")
+            t = Table(box=box.SIMPLE)
+            t.add_column("#", style="cyan", width=3)
+            t.add_column("Model", width=30)
+            t.add_column("Type", width=15)
+            t.add_column("", width=10)
+            
+            for i, m in enumerate(models, 1):
+                mtype = "[green]🐬 Uncensored[/green]" if is_uncensored(m) else "[dim]Standard[/dim]"
+                cur = "[green]◀[/green]" if m == cur_model else ""
+                t.add_row(str(i), m, mtype, cur)
+                all_models.append(("ollama", m))
+            
+            console.print(t)
+        
+        if info.get('openai_available'):
+            console.print(f"\n[bold]OpenAI:[/bold]")
+            t = Table(box=box.SIMPLE)
+            t.add_column("#", style="cyan", width=3)
+            t.add_column("Model", width=30)
+            t.add_column("Type", width=15)
+            t.add_column("", width=10)
+            
+            for m in ["gpt-4o", "gpt-4o-mini", "gpt-4-turbo"]:
+                idx = len(all_models) + 1
+                cur = "[green]◀[/green]" if m == cur_model else ""
+                t.add_row(str(idx), m, "[dim]Cloud ($)[/dim]", cur)
+                all_models.append(("openai", m))
+            
+            console.print(t)
+        
+        # Recommendations
+        console.print(f"\n[yellow]Recommended:[/yellow]")
+        for i, (p, m) in enumerate(all_models, 1):
+            if is_uncensored(m):
+                console.print(f"   [green]→ {i}. {m}[/green]")
+        
+        console.print(f"\n[dim]Enter number or 'b' to go back[/dim]")
+        
+        choice = Prompt.ask("\nSelect", default="b")
+        
+        if choice.lower() == 'b':
+            break
+        
+        if choice.isdigit():
+            idx = int(choice) - 1
+            if 0 <= idx < len(all_models):
+                prov, model = all_models[idx]
+                try:
+                    os.environ["OLLAMA_MODEL"] = model
+                    ai.switch_provider(prov)
+                    CURRENT_MODEL = model
+                    CURRENT_PROVIDER = prov
+                    console.print(f"\n[green]✅ Switched to {model}[/green]")
+                    if is_uncensored(model):
+                        console.print(f"   [green]🐬 Uncensored mode![/green]")
+                    input("\nEnter to continue...")
+                except Exception as e:
+                    console.print(f"[red]Error: {e}[/red]")
 
 
 async def main():
-    """Main entry point"""
-    parser = argparse.ArgumentParser(description="Kali-GPT Autonomous Mode")
-    parser.add_argument("--target", "-t", help="Target for immediate scan")
-    parser.add_argument("--provider", "-p", choices=["ollama", "openai", "auto"], 
-                       default="auto", help="AI provider")
-    parser.add_argument("--model", "-m", help="Model name")
+    """Main"""
+    global CURRENT_MODEL, CURRENT_PROVIDER
+    
+    parser = argparse.ArgumentParser(description="Kali-GPT")
+    parser.add_argument("--target", "-t", help="Target")
+    parser.add_argument("--provider", "-p", choices=["ollama", "openai", "auto"], default="auto")
+    parser.add_argument("--model", "-m", help="Model")
     args = parser.parse_args()
     
-    # Set model if specified
+    # Auto-pick best model
     if args.model:
         os.environ["OLLAMA_MODEL"] = args.model
+        CURRENT_MODEL = args.model
+    else:
+        models = get_ollama_models()
+        if models:
+            best = pick_best_model(models)
+            os.environ["OLLAMA_MODEL"] = best
+            CURRENT_MODEL = best
     
-    display_banner()
-    
-    # Initialize AI service
-    console.print("[cyan]Initializing AI service...[/cyan]")
+    show_banner()
+    console.print("[cyan]Initializing...[/cyan]")
     
     try:
-        ai_service = AIService(provider=args.provider)
-        info = ai_service.get_provider_info()
-        console.print(f"[green]✓ Using {info['provider']} ({info['model']})[/green]\n")
+        ai = AIService(provider=args.provider)
+        info = ai.get_provider_info()
+        
+        CURRENT_PROVIDER = info.get('provider', 'ollama')
+        if not CURRENT_MODEL:
+            CURRENT_MODEL = info.get('model', '?')
+        
+        if is_uncensored(CURRENT_MODEL):
+            console.print(f"[green]🐬 {CURRENT_PROVIDER} → {CURRENT_MODEL}[/green]\n")
+        else:
+            console.print(f"[yellow]⚠️ {CURRENT_PROVIDER} → {CURRENT_MODEL}[/yellow]")
+            console.print(f"[dim]Use option 6 for uncensored model[/dim]\n")
+            
     except Exception as e:
-        console.print(f"[red]Failed to initialize AI: {e}[/red]")
-        console.print("\n[yellow]To fix:[/yellow]")
-        console.print("  1. Install Ollama: curl -fsSL https://ollama.com/install.sh | sh")
-        console.print("  2. Pull model: ollama pull llama3.2")
-        console.print("  3. Start: ollama serve")
+        console.print(f"[red]Failed: {e}[/red]")
+        console.print("\n[yellow]Setup:[/yellow]")
+        console.print("  curl -fsSL https://ollama.com/install.sh | sh")
+        console.print("  ./install-models.sh")
         return
     
-    # If target provided, run immediately
+    # Direct target
     if args.target:
-        await run_autonomous(ai_service, args.target)
+        await run_pentest(ai, args.target)
         return
     
-    # Interactive menu
+    # Menu loop
     while True:
         try:
-            display_menu()
-            choice = Prompt.ask("\nSelect", default="0")
+            show_menu()
+            c = Prompt.ask("\nSelect", default="0")
             
-            if choice == "0":
-                console.print("\n[cyan]Goodbye! 🐉[/cyan]\n")
+            if c == "0":
+                console.print("\n[cyan]Bye![/cyan]\n")
                 break
-            elif choice == "1":
-                target = Prompt.ask("Enter target (IP/domain)")
-                if target:
-                    await run_autonomous(ai_service, target)
-            elif choice == "2":
-                target = Prompt.ask("Enter target")
-                if target:
-                    await run_autonomous(ai_service, target)
-            elif choice == "3":
-                await quick_scan(ai_service)
-            elif choice == "4":
-                await ask_ai(ai_service)
-            elif choice == "5":
+            elif c in ["1", "2"]:
+                t = Prompt.ask("Target")
+                if t:
+                    await run_pentest(ai, t)
+            elif c == "3":
+                await quick_scan(ai)
+            elif c == "4":
+                await ask_ai(ai)
+            elif c == "5":
                 await show_stats()
-            elif choice == "6":
-                switch_provider(ai_service)
-            
+            elif c == "6":
+                model_menu(ai)
+                
         except KeyboardInterrupt:
             console.print("\n")
             if Confirm.ask("Exit?", default=False):
