@@ -1,3 +1,6 @@
+
+<img width="1875" height="897" alt="Screenshot 2026-01-16 200517" src="https://github.com/user-attachments/assets/a85db055-60a7-48e4-9021-f1364d68bc13" />
+
 # 🐉 Kali GPT - AI-Powered Penetration Testing Assistant
 
 **Kali GPT** is a powerful terminal-based AI assistant designed for penetration testers and security professionals. Available in two versions: **Basic** for simple tasks and **Advanced** for professional red team operations with command execution capabilities.
