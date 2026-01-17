@@ -874,14 +874,4 @@ python3 -m py_compile ~/.kali-gpt/plugins/your_plugin.py
 Same license as Kali GPT project.
 
 ---
-
-## 📞 Support
-
-For issues, questions, or feature requests:
-- GitHub Issues: [Project Repository]
-- Documentation: This file and related docs
-- Community: [Link to community forum if available]
-
----
-
 **End of Documentation**
