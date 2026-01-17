@@ -192,7 +192,7 @@ def show_menu():
         ("3", "🔧 Quick Scan", "Just nmap"),
         ("4", "❓ Ask AI", "Chat mode"),
         ("5", "📊 Statistics", "Past engagements"),
-        ("6", "⚙️  Models", "Select model"),
+        ("6", "⚙️ Models", "Select model"),
         ("0", "🚪 Exit", ""),
     ]
     
