@@ -10,7 +10,7 @@ If you find a bug, please create an issue with:
 - Clear description of the bug
 - Steps to reproduce
 - Expected vs actual behavior
-- Your environment (OS, Python version, etc.)
+- Your environment (OS, Python version, Ollama version, model used)
 - Relevant logs or error messages
 
 ### Suggesting Features
@@ -94,54 +94,118 @@ Feature requests are welcome! Please include:
 We especially welcome contributions in:
 
 ### High Priority
+- [ ] More fallback commands for autonomous mode
+- [ ] Better prompts for different models
 - [ ] Unit tests and test coverage
 - [ ] Integration with more Kali tools
 - [ ] Improved error handling
-- [ ] Performance optimizations
 - [ ] Better command parsing and validation
 
 ### Medium Priority
+- [ ] Custom Modelfile presets for different use cases
+- [ ] Report generation improvements
 - [ ] Additional security profiles
-- [ ] Report generation features
 - [ ] Multi-target management
-- [ ] Plugin system architecture
-- [ ] Alternative AI model support
+- [ ] Web interface
 
 ### Nice to Have
-- [ ] GUI/Web interface
+- [ ] GUI interface
 - [ ] Team collaboration features
 - [ ] Database integration for findings
-- [ ] Automated vulnerability scanning
+- [ ] Attack tree visualization
 - [ ] Custom tool profiles
+
+## 🔧 Adding New Tools (v3.0)
+
+To add support for a new penetration testing tool:
+
+1. **Add to VALID_TOOLS** in `kali-gpt-autonomous.py`:
+   ```python
+   VALID_TOOLS = {
+       'nmap', 'nikto',
+       'your-new-tool',  # Add here
+       ...
+   }
+   ```
+
+2. **Add timeout** if needed in `get_timeout()`:
+   ```python
+   def get_timeout(tool):
+       if tool in ['nmap', 'masscan']:
+           return 300
+       elif tool == 'your-new-tool':
+           return 120  # Add custom timeout
+       ...
+   ```
+
+3. **Add fallback command** (optional):
+   ```python
+   self.fallbacks = [
+       f"nmap -sV {target}",
+       f"your-new-tool --option {target}",  # Add here
+       ...
+   ]
+   ```
+
+## 🐬 Adding Model Support (v3.0)
+
+To add a new uncensored model:
+
+1. **Add to UNCENSORED_MODELS** list:
+   ```python
+   UNCENSORED_MODELS = [
+       'kali-pentester',
+       'dolphin-llama3',
+       'your-new-model',  # Add here
+       ...
+   ]
+   ```
+
+2. **Create a Modelfile** (optional):
+   ```dockerfile
+   # Modelfile.your-model
+   FROM base-model
+   PARAMETER temperature 0.7
+   SYSTEM """Your custom system prompt for pentesting..."""
+   ```
+
+3. **Update install-models.sh** if needed
 
 ## 🧪 Testing
 
 Before submitting a PR:
 
-1. **Test the basic functionality**
+1. **Test autonomous mode**
    ```bash
-   source venv/bin/activate
-   ./kali-gpt.py
-   # Test basic features
+   python3 kali-gpt-autonomous.py
+   # Test with different models
+   # Test on safe targets like scanme.nmap.org
    ```
 
-2. **Test the advanced version**
+2. **Test model selection**
    ```bash
-   ./kali-gpt-advanced.py
-   # Test your new feature
-   # Test existing features still work
+   # Option 6 should show all models
+   # Switching should work
    ```
 
-3. **Test edge cases**
-   - Invalid inputs
-   - Missing dependencies
-   - Network errors
-   - Permission issues
-
-4. **Check for errors**
-   ```bash
-   python3 -m py_compile kali-gpt-advanced.py
+3. **Test command validation**
+   ```python
+   # These should be accepted
+   assert is_valid_command("nmap -sV target") == True
+   
+   # These should be rejected
+   assert is_valid_command("Scan the target") == False
    ```
+
+4. **Syntax check**
+   ```bash
+   python3 -m py_compile kali-gpt-autonomous.py
+   ```
+
+5. **Test with both model types**
+   - Test with uncensored model (dolphin-llama3)
+   - Test with standard model (llama3.2)
+   - Verify fallback system works when LLM gives bad output
 
 ## 📋 Commit Message Guidelines
 
@@ -158,19 +222,20 @@ Test: Adding or updating tests
 ```
 
 Examples:
-- `Add: Wireless security profile with aircrack-ng integration`
-- `Fix: Command timeout not being respected`
-- `Security: Add validation for user-provided file paths`
-- `Docs: Update README with new installation instructions`
+- `Add: nuclei support with timeout config`
+- `Fix: gobuster not including target in command`
+- `Update: Better prompts for dolphin models`
+- `Docs: Update MODELS.md with new recommendations`
 
 ## 🚫 What We Won't Accept
 
 - Features designed for malicious use
-- Removal of safety controls
+- Removal of safety controls or command validation
 - Encouraging unauthorized access
 - Poorly documented code
 - Breaking changes without discussion
 - Code that violates ethical hacking principles
+- Removal of confirmation prompts
 
 ## 🔐 Responsible Disclosure
 
@@ -185,6 +250,7 @@ If you discover a security vulnerability:
 ## 💬 Getting Help
 
 - Check existing issues and documentation
+- Read MODELS.md for model-related questions
 - Ask questions in issue discussions
 - Be respectful and patient
 - Provide context and examples
@@ -214,6 +280,7 @@ New to contributing? Check out:
 - [GitHub Flow](https://guides.github.com/introduction/flow/)
 - [Python PEP 8](https://www.python.org/dev/peps/pep-0008/)
 - [OWASP Testing Guide](https://owasp.org/www-project-web-security-testing-guide/)
+- [Ollama Documentation](https://ollama.com/docs)
 
 ## 📄 License
 
@@ -223,7 +290,7 @@ By contributing, you agree that your contributions will be licensed under the MI
 
 Contributors will be recognized in:
 - Release notes
-- Contributors section (coming soon)
+- CHANGELOG.md
 - Special thanks in major releases
 
 ---
