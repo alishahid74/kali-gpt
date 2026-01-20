@@ -222,16 +222,7 @@ learning_rate = 2e-4
 - Test on examples NOT in training data
 - Compare against base model
 - Check for refusal regression
-
-## File Structure
-
-```
-fine_tune/
-├── pentest_training_data.jsonl  # Training data
-├── Modelfile.security           # Advanced Modelfile
-├── fine_tune.py                 # Training script
-├── evaluate_model.py            # Benchmark script
-└── FINE_TUNING_GUIDE.md        # This guide
+  
 ```
 
 ## Troubleshooting
