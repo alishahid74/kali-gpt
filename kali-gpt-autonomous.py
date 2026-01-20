@@ -1,14 +1,16 @@
 #!/usr/bin/env python3
 """
-Kali-GPT Autonomous Mode
+Kali-GPT Autonomous Mode v3.1 - Attack Tree Visualization
 
-AI-powered penetration testing with local LLMs.
-Supports uncensored models for better results.
+New in v3.1:
+- Attack Tree visualization (ASCII + HTML)
+- Real-time tree updates during pentest
+- Export attack path as interactive HTML
+- View tree anytime with Option 7
 
 Usage:
     python3 kali-gpt-autonomous.py
     python3 kali-gpt-autonomous.py --model kali-pentester
-    python3 kali-gpt-autonomous.py -t 192.168.1.1
 """
 
 import asyncio
@@ -17,7 +19,9 @@ import os
 import subprocess
 import shutil
 import httpx
+import re
 from datetime import datetime
+from pathlib import Path
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -27,6 +31,7 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.prompt import Prompt, Confirm
 from rich.markdown import Markdown
+from rich.tree import Tree as RichTree
 from rich import box
 
 from kali_gpt.modules.ai_service import AIService
@@ -40,7 +45,280 @@ from kali_gpt.memory.store import MemoryStore
 
 console = Console()
 
-# Tools that are OK to run
+# ============================================================================
+# ATTACK TREE (Phase 4)
+# ============================================================================
+
+class NodeType:
+    ROOT = "root"
+    DISCOVERY = "discovery"
+    ACTION = "action"
+    FINDING = "finding"
+    CREDENTIAL = "credential"
+    ACCESS = "access"
+
+
+class AttackNode:
+    """Single node in attack tree"""
+    def __init__(self, id: str, label: str, node_type: str, details: str = "", 
+                 command: str = "", risk: str = "info"):
+        self.id = id
+        self.label = label
+        self.node_type = node_type
+        self.details = details
+        self.command = command
+        self.risk = risk
+        self.timestamp = datetime.now().strftime("%H:%M:%S")
+        self.children = []
+        self.parent = None
+    
+    def add_child(self, child):
+        child.parent = self
+        self.children.append(child)
+        return child
+
+
+class AttackTree:
+    """
+    Tracks attack path during pentest
+    """
+    def __init__(self, target: str):
+        self.target = target
+        self.root = AttackNode("root", f"🎯 {target}", NodeType.ROOT)
+        self.nodes = {"root": self.root}
+        self.counter = 0
+        self.current_node = self.root
+        self.start_time = datetime.now()
+    
+    def _new_id(self) -> str:
+        self.counter += 1
+        return f"n{self.counter}"
+    
+    def add_discovery(self, label: str, details: str = "", parent=None) -> AttackNode:
+        """Add discovery (port, service, etc)"""
+        node = AttackNode(self._new_id(), f"🔍 {label}", NodeType.DISCOVERY, details)
+        (parent or self.root).add_child(node)
+        self.nodes[node.id] = node
+        return node
+    
+    def add_action(self, tool: str, command: str, success: bool = True, 
+                   output: str = "", parent=None) -> AttackNode:
+        """Add tool execution"""
+        icon = "✓" if success else "✗"
+        label = f"{icon} {tool}"
+        node = AttackNode(self._new_id(), label, NodeType.ACTION, 
+                         command=command, details=output[:200])
+        (parent or self.current_node).add_child(node)
+        self.nodes[node.id] = node
+        self.current_node = node
+        return node
+    
+    def add_finding(self, label: str, risk: str = "info", parent=None) -> AttackNode:
+        """Add finding/vulnerability"""
+        icons = {"critical": "🔴", "high": "🟠", "medium": "🟡", "low": "🟢", "info": "🔵"}
+        icon = icons.get(risk, "🔵")
+        node = AttackNode(self._new_id(), f"{icon} {label}", NodeType.FINDING, risk=risk)
+        (parent or self.current_node).add_child(node)
+        self.nodes[node.id] = node
+        return node
+    
+    def add_credential(self, label: str, parent=None) -> AttackNode:
+        """Add found credential"""
+        node = AttackNode(self._new_id(), f"🔑 {label}", NodeType.CREDENTIAL, risk="critical")
+        (parent or self.current_node).add_child(node)
+        self.nodes[node.id] = node
+        return node
+    
+    def add_access(self, label: str, parent=None) -> AttackNode:
+        """Add access gained"""
+        node = AttackNode(self._new_id(), f"💻 {label}", NodeType.ACCESS, risk="critical")
+        (parent or self.current_node).add_child(node)
+        self.nodes[node.id] = node
+        return node
+    
+    def to_ascii(self) -> str:
+        """Generate ASCII tree"""
+        lines = []
+        lines.append("")
+        lines.append("╔═══════════════════════════════════════════════════════════════╗")
+        lines.append("║                       ATTACK TREE                             ║")
+        lines.append("╚═══════════════════════════════════════════════════════════════╝")
+        lines.append("")
+        
+        def render(node, prefix="", is_last=True):
+            connector = "└── " if is_last else "├── "
+            lines.append(f"{prefix}{connector}{node.label}")
+            
+            if node.command:
+                p = prefix + ("    " if is_last else "│   ")
+                cmd = node.command[:60] + "..." if len(node.command) > 60 else node.command
+                lines.append(f"{p}[dim]$ {cmd}[/dim]")
+            
+            child_prefix = prefix + ("    " if is_last else "│   ")
+            for i, child in enumerate(node.children):
+                render(child, child_prefix, i == len(node.children) - 1)
+        
+        lines.append(f"🎯 {self.target}")
+        for i, child in enumerate(self.root.children):
+            render(child, "", i == len(self.root.children) - 1)
+        
+        # Stats
+        lines.append("")
+        lines.append("─" * 60)
+        discoveries = sum(1 for n in self.nodes.values() if n.node_type == NodeType.DISCOVERY)
+        actions = sum(1 for n in self.nodes.values() if n.node_type == NodeType.ACTION)
+        findings = sum(1 for n in self.nodes.values() if n.node_type == NodeType.FINDING)
+        lines.append(f"Discoveries: {discoveries} | Actions: {actions} | Findings: {findings}")
+        lines.append("")
+        
+        return "\n".join(lines)
+    
+    def to_rich_tree(self) -> RichTree:
+        """Generate Rich tree for terminal"""
+        tree = RichTree(f"[bold red]🎯 {self.target}[/bold red]")
+        
+        def add_nodes(parent_tree, node):
+            for child in node.children:
+                style = "green" if "✓" in child.label else "yellow"
+                if "🔴" in child.label:
+                    style = "red bold"
+                elif "🟠" in child.label:
+                    style = "yellow bold"
+                
+                branch = parent_tree.add(f"[{style}]{child.label}[/{style}]")
+                
+                if child.command:
+                    branch.add(f"[dim]$ {child.command[:50]}...[/dim]" if len(child.command) > 50 
+                              else f"[dim]$ {child.command}[/dim]")
+                
+                add_nodes(branch, child)
+        
+        add_nodes(tree, self.root)
+        return tree
+    
+    def export_html(self, filepath: str = None) -> str:
+        """Export interactive HTML visualization"""
+        if not filepath:
+            filepath = f"attack_tree_{self.target.replace('.', '_')}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.html"
+        
+        # Build nodes and edges for vis.js
+        nodes_data = []
+        edges_data = []
+        
+        def process(node, level=0):
+            colors = {
+                NodeType.ROOT: "#e74c3c",
+                NodeType.DISCOVERY: "#3498db",
+                NodeType.ACTION: "#2ecc71",
+                NodeType.FINDING: "#f39c12",
+                NodeType.CREDENTIAL: "#9b59b6",
+                NodeType.ACCESS: "#e74c3c"
+            }
+            
+            risk_colors = {"critical": "#e74c3c", "high": "#e67e22", 
+                          "medium": "#f1c40f", "low": "#2ecc71", "info": "#3498db"}
+            
+            color = colors.get(node.node_type, "#888")
+            if node.node_type == NodeType.FINDING:
+                color = risk_colors.get(node.risk, "#f39c12")
+            
+            # Clean label for HTML
+            label = ''.join(c for c in node.label if ord(c) < 128 or c in '✓✗')
+            label = label.replace('🎯', '[TARGET]').replace('🔍', '[FOUND]')
+            label = label.replace('🔴', '[CRIT]').replace('🟠', '[HIGH]')
+            label = label.replace('🟡', '[MED]').replace('🟢', '[LOW]').replace('🔵', '[INFO]')
+            label = label.replace('🔑', '[CRED]').replace('💻', '[ACCESS]')
+            
+            nodes_data.append({
+                "id": node.id,
+                "label": label,
+                "level": level,
+                "color": {"background": color, "border": color},
+                "title": node.command or node.details or "",
+                "shape": "box" if node.node_type == NodeType.ACTION else "ellipse"
+            })
+            
+            for child in node.children:
+                edges_data.append({"from": node.id, "to": child.id, "arrows": "to"})
+                process(child, level + 1)
+        
+        process(self.root)
+        
+        import json
+        
+        html = f'''<!DOCTYPE html>
+<html>
+<head>
+    <title>Attack Tree - {self.target}</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/vis-network/9.1.6/vis-network.min.js"></script>
+    <style>
+        * {{ margin: 0; padding: 0; box-sizing: border-box; }}
+        body {{ font-family: 'Segoe UI', Arial, sans-serif; background: #1a1a2e; color: #eee; }}
+        .header {{ background: #16213e; padding: 20px; border-bottom: 3px solid #e74c3c; }}
+        .header h1 {{ color: #e74c3c; }}
+        .header .target {{ color: #3498db; margin-top: 5px; }}
+        .stats {{ margin-top: 10px; }}
+        .stats span {{ margin-right: 15px; padding: 5px 10px; background: #1a1a2e; border-radius: 4px; }}
+        #network {{ width: 100%; height: calc(100vh - 120px); }}
+        .legend {{ position: fixed; bottom: 20px; right: 20px; background: #16213e; padding: 15px; border-radius: 8px; }}
+        .legend-item {{ display: flex; align-items: center; margin: 5px 0; font-size: 12px; }}
+        .legend-color {{ width: 16px; height: 16px; border-radius: 50%; margin-right: 8px; }}
+        .btn {{ position: fixed; top: 100px; right: 20px; padding: 10px 20px; background: #3498db; 
+               color: white; border: none; border-radius: 4px; cursor: pointer; }}
+        .btn:hover {{ background: #2980b9; }}
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🎯 ATTACK TREE</h1>
+        <div class="target">Target: {self.target}</div>
+        <div class="stats">
+            <span>Discoveries: {sum(1 for n in self.nodes.values() if n.node_type == NodeType.DISCOVERY)}</span>
+            <span>Actions: {sum(1 for n in self.nodes.values() if n.node_type == NodeType.ACTION)}</span>
+            <span>Findings: {sum(1 for n in self.nodes.values() if n.node_type == NodeType.FINDING)}</span>
+        </div>
+    </div>
+    <div id="network"></div>
+    <button class="btn" onclick="network.fit()">Fit View</button>
+    <div class="legend">
+        <strong>Legend</strong>
+        <div class="legend-item"><div class="legend-color" style="background:#e74c3c"></div>Target/Critical</div>
+        <div class="legend-item"><div class="legend-color" style="background:#3498db"></div>Discovery</div>
+        <div class="legend-item"><div class="legend-color" style="background:#2ecc71"></div>Action</div>
+        <div class="legend-item"><div class="legend-color" style="background:#f39c12"></div>Finding</div>
+        <div class="legend-item"><div class="legend-color" style="background:#9b59b6"></div>Credential</div>
+    </div>
+    <script>
+        var nodes = new vis.DataSet({json.dumps(nodes_data)});
+        var edges = new vis.DataSet({json.dumps(edges_data)});
+        var container = document.getElementById('network');
+        var options = {{
+            layout: {{ hierarchical: {{ direction: 'UD', sortMethod: 'directed', levelSeparation: 100 }} }},
+            nodes: {{ font: {{ color: '#fff' }}, borderWidth: 2, shadow: true }},
+            edges: {{ color: '#555', width: 2, smooth: {{ type: 'cubicBezier' }} }},
+            physics: false
+        }};
+        var network = new vis.Network(container, {{ nodes: nodes, edges: edges }}, options);
+        network.on('click', function(p) {{
+            if (p.nodes.length > 0) {{
+                var n = nodes.get(p.nodes[0]);
+                if (n.title) alert(n.label + '\\n\\n' + n.title);
+            }}
+        }});
+    </script>
+</body>
+</html>'''
+        
+        with open(filepath, 'w') as f:
+            f.write(html)
+        
+        return filepath
+
+
+# ============================================================================
+# CONFIGURATION
+# ============================================================================
+
 VALID_TOOLS = {
     'nmap', 'masscan', 'unicornscan', 'hping3', 'arping',
     'nikto', 'gobuster', 'dirb', 'ffuf', 'wfuzz', 'feroxbuster',
@@ -61,10 +339,8 @@ VALID_TOOLS = {
     'ping', 'traceroute', 'netstat', 'ss',
 }
 
-# Don't try to run these (GUI apps)
 GUI_TOOLS = {'burpsuite', 'wireshark', 'zenmap', 'armitage', 'maltego', 'zaproxy'}
 
-# If the LLM output starts with these, it's probably a description not a command
 DESCRIPTION_WORDS = {
     'scan', 'review', 'conduct', 'perform', 'execute', 'run', 'use', 'start',
     'open', 'launch', 'check', 'analyze', 'identify', 'gather', 'collect',
@@ -75,20 +351,18 @@ DESCRIPTION_WORDS = {
     'going', 'will', 'shall', 'the', 'a', 'an'
 }
 
-# Models that won't refuse security queries
 UNCENSORED_MODELS = [
     'kali-pentester', 'kali-redteam',
     'dolphin-llama3', 'dolphin-mistral', 'dolphin-mixtral',
     'openhermes', 'nous-hermes', 'wizard-vicuna-uncensored',
 ]
 
-# Track current model globally
 CURRENT_MODEL = None
 CURRENT_PROVIDER = None
+ATTACK_TREE = None  # Global attack tree
 
 
 def get_ollama_models():
-    """Get list of models from Ollama"""
     try:
         r = httpx.get("http://localhost:11434/api/tags", timeout=5)
         if r.status_code == 200:
@@ -99,7 +373,6 @@ def get_ollama_models():
 
 
 def pick_best_model(models):
-    """Auto-select the best uncensored model"""
     for preferred in UNCENSORED_MODELS:
         for m in models:
             if preferred in m.lower():
@@ -108,28 +381,18 @@ def pick_best_model(models):
 
 
 def is_uncensored(model_name):
-    """Check if model is uncensored"""
-    m = model_name.lower()
-    return any(u in m for u in UNCENSORED_MODELS)
+    return any(u in model_name.lower() for u in UNCENSORED_MODELS)
 
 
 def is_valid_command(action):
-    """Check if this looks like a real command"""
     if not action or len(action) < 3:
         return False
     first = action.split()[0].lower().strip('`"\'')
-    if first in VALID_TOOLS:
-        return True
-    if first in DESCRIPTION_WORDS:
-        return False
-    return False
+    return first in VALID_TOOLS and first not in DESCRIPTION_WORDS
 
 
 def add_target_if_missing(cmd, target):
-    """Make sure target is in the command"""
-    if not target or not cmd:
-        return cmd
-    if target in cmd:
+    if not target or not cmd or target in cmd:
         return cmd
     
     tool = cmd.split()[0].lower()
@@ -151,7 +414,6 @@ def add_target_if_missing(cmd, target):
 
 
 def get_timeout(tool):
-    """Get timeout for a tool"""
     t = tool.lower().split()[0]
     if t in ['nmap', 'masscan']:
         return 300
@@ -162,8 +424,53 @@ def get_timeout(tool):
     return 90
 
 
+def parse_findings(output: str, tool: str) -> list:
+    """Parse output for interesting findings"""
+    findings = []
+    output_lower = output.lower()
+    
+    # Port discoveries
+    port_pattern = r'(\d+)/tcp\s+open\s+(\S+)'
+    for match in re.finditer(port_pattern, output):
+        port, service = match.groups()
+        findings.append(("discovery", f"Port {port} ({service})"))
+    
+    # Vulnerabilities
+    if 'vulnerable' in output_lower or 'vulnerability' in output_lower:
+        findings.append(("finding", "Potential vulnerability detected", "high"))
+    
+    if 'wordpress' in output_lower:
+        findings.append(("finding", "WordPress detected", "medium"))
+    
+    if 'sql injection' in output_lower or 'sqli' in output_lower:
+        findings.append(("finding", "SQL Injection possible", "critical"))
+    
+    if 'xss' in output_lower or 'cross-site' in output_lower:
+        findings.append(("finding", "XSS possible", "high"))
+    
+    if 'admin' in output_lower and ('login' in output_lower or 'panel' in output_lower):
+        findings.append(("finding", "Admin panel found", "medium"))
+    
+    if 'password' in output_lower or 'credential' in output_lower:
+        findings.append(("finding", "Credentials exposure", "critical"))
+    
+    if 'backup' in output_lower and ('.zip' in output_lower or '.sql' in output_lower):
+        findings.append(("finding", "Backup file found", "high"))
+    
+    if 'tls 1.0' in output_lower or 'ssl 3' in output_lower:
+        findings.append(("finding", "Weak SSL/TLS", "medium"))
+    
+    if 'directory listing' in output_lower or 'index of' in output_lower:
+        findings.append(("finding", "Directory listing enabled", "low"))
+    
+    return findings
+
+
+# ============================================================================
+# UI
+# ============================================================================
+
 def show_banner():
-    """Show the banner"""
     banner = """
 [bold cyan]
 ██╗  ██╗ █████╗ ██╗     ██╗       ██████╗ ██████╗ ████████╗
@@ -173,14 +480,13 @@ def show_banner():
 ██║  ██╗██║  ██║███████╗██║      ╚██████╔╝██║        ██║   
 ╚═╝  ╚═╝╚═╝  ╚═╝╚══════╝╚═╝       ╚═════╝ ╚═╝        ╚═╝   
 [/bold cyan]
-[bold green]    🤖 AUTONOMOUS MODE - v3.0[/bold green]
+[bold green]    🤖 AUTONOMOUS MODE - v3.1 (Attack Tree)[/bold green]
 [dim]    AI-Powered Penetration Testing[/dim]
 """
     console.print(banner)
 
 
 def show_menu():
-    """Show main menu"""
     table = Table(title="Main Menu", box=box.ROUNDED, show_header=False)
     table.add_column("", style="cyan", width=5)
     table.add_column("", style="white")
@@ -192,7 +498,8 @@ def show_menu():
         ("3", "🔧 Quick Scan", "Just nmap"),
         ("4", "❓ Ask AI", "Chat mode"),
         ("5", "📊 Statistics", "Past engagements"),
-        ("6", "⚙️ Models", "Select model"),
+        ("6", "⚙️  Models", "Select model"),
+        ("7", "🌳 Attack Tree", "View/Export tree"),
         ("0", "🚪 Exit", ""),
     ]
     
@@ -202,7 +509,6 @@ def show_menu():
     console.print(table)
 
 
-# Agent callbacks
 async def on_state_change(state):
     icons = {
         AgentState.IDLE: "⏸️", AgentState.THINKING: "🤔",
@@ -244,12 +550,19 @@ async def on_observation(obs):
     ))
 
 
+# ============================================================================
+# AUTONOMOUS PENTEST
+# ============================================================================
+
 async def run_pentest(ai_service, target):
-    """Run autonomous pentest"""
-    global CURRENT_MODEL
+    global CURRENT_MODEL, ATTACK_TREE
     
     target = target.replace("http://", "").replace("https://", "").rstrip("/")
     console.print(f"\n[bold green]🎯 Starting pentest on {target}[/bold green]\n")
+    
+    # Initialize attack tree
+    ATTACK_TREE = AttackTree(target)
+    console.print(f"[dim]🌳 Attack tree initialized[/dim]\n")
     
     info = ai_service.get_provider_info()
     model = CURRENT_MODEL or info.get('model', '')
@@ -258,17 +571,18 @@ async def run_pentest(ai_service, target):
     if uncensored:
         console.print(f"[green]🐬 Using: {model}[/green]\n")
     else:
-        console.print(f"[yellow]⚠️ Using: {model} (standard model)[/yellow]")
-        console.print(f"[dim]Tip: Use option 6 to pick an uncensored model[/dim]\n")
+        console.print(f"[yellow]⚠️ Using: {model}[/yellow]\n")
     
     memory = MemoryStore()
     await memory.initialize()
     
-    # Tool executor
+    # Tool executor with tree integration
     class ToolRunner:
-        def __init__(self, target):
+        def __init__(self, target, tree):
             self.target = target
+            self.tree = tree
             self.ran = set()
+            self.port_nodes = {}
         
         async def execute(self, tool, command=None, **kw):
             cmd = (command or tool).strip().strip('`')
@@ -299,13 +613,32 @@ async def run_pentest(ai_service, target):
                 r = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=timeout)
                 out = r.stdout + r.stderr
                 ok = r.returncode == 0 or len(out.strip()) > 10
+                
+                # Add to attack tree
+                action_node = self.tree.add_action(tool_name, cmd, ok, out)
+                
+                # Parse and add findings
+                findings = parse_findings(out, tool_name)
+                for finding in findings:
+                    if finding[0] == "discovery":
+                        # Check if we already have this port
+                        if finding[1] not in self.port_nodes:
+                            node = self.tree.add_discovery(finding[1], parent=self.tree.root)
+                            self.port_nodes[finding[1]] = node
+                    elif finding[0] == "finding":
+                        risk = finding[2] if len(finding) > 2 else "info"
+                        self.tree.add_finding(finding[1], risk=risk, parent=action_node)
+                
                 return {"success": ok, "output": out or "Done", "error": None, "findings": []}
+                
             except subprocess.TimeoutExpired:
+                self.tree.add_action(tool_name, cmd, False, "Timeout")
                 return {"success": False, "output": "", "error": f"Timeout ({timeout}s)", "findings": []}
             except Exception as e:
+                self.tree.add_action(tool_name, cmd, False, str(e))
                 return {"success": False, "output": "", "error": str(e), "findings": []}
     
-    # LLM wrapper
+    # LLM Wrapper
     class LLMWrapper:
         def __init__(self, ai, target, uncensored=False):
             self.ai = ai
@@ -314,7 +647,6 @@ async def run_pentest(ai_service, target):
             self.history = set()
             self.fb_idx = 0
             
-            # Fallback commands - all have target
             self.fallbacks = [
                 f"nmap -sV -sC -T4 {target}",
                 f"curl -sIk https://{target}",
@@ -336,11 +668,11 @@ async def run_pentest(ai_service, target):
             
             self.prompt = f"""You are a penetration tester. Target: {target}
 
-IMPORTANT: Every command must include the target {target}
+CRITICAL: Every command must include the target {target}
 
 Format:
-THOUGHT: Brief analysis
-ACTION: Complete command with {target}
+THOUGHT: [analysis]
+ACTION: [complete command with {target}]
 
 Examples:
 THOUGHT: Scan ports
@@ -349,14 +681,7 @@ ACTION: nmap -sV -sC -T4 {target}
 THOUGHT: Check web
 ACTION: whatweb https://{target}
 
-THOUGHT: Find dirs
-ACTION: gobuster dir -u https://{target} -w /usr/share/wordlists/dirb/common.txt -k -q
-
-WRONG:
-ACTION: nmap           <- missing target
-ACTION: Scan ports     <- description, not command
-
-Always include {target} in your command!"""
+Always include {target}!"""
         
         async def generate(self, prompt, **kw):
             resp = self.ai.ask(prompt, system_prompt=self.prompt)
@@ -408,10 +733,8 @@ Always include {target} in your command!"""
                 self.history.add(action)
             
             return type('R', (), {
-                'content': resp,
-                'thought': thought or "...",
-                'action': action,
-                'action_input': self.target
+                'content': resp, 'thought': thought or "...",
+                'action': action, 'action_input': self.target
             })()
         
         def set_system_prompt(self, n): pass
@@ -421,7 +744,7 @@ Always include {target} in your command!"""
             self.fb_idx = 0
     
     llm = LLMWrapper(ai_service, target, uncensored)
-    runner = ToolRunner(target)
+    runner = ToolRunner(target, ATTACK_TREE)
     
     agent = AutonomousAgent(llm=llm, tool_executor=runner)
     agent.on_state_change = on_state_change
@@ -437,18 +760,37 @@ Always include {target} in your command!"""
     try:
         console.print("[yellow]Running... (Ctrl+C to stop)[/yellow]\n")
         ctx = await agent.run(autonomous=False)
+        
+        # Show results
         show_results(ctx)
+        
+        # Show attack tree
+        console.print(ATTACK_TREE.to_ascii())
+        
+        # Offer to export
+        if Confirm.ask("Export attack tree to HTML?", default=True):
+            filepath = ATTACK_TREE.export_html()
+            console.print(f"[green]✓ Exported: {filepath}[/green]")
+        
         await memory.update_engagement(eid,
             phase_reached=ctx.current_phase.value,
             total_actions=len(ctx.actions_taken),
             vulnerabilities_found=len(ctx.discovered_vulnerabilities))
+            
     except KeyboardInterrupt:
         console.print("\n[yellow]Stopped[/yellow]")
+        
+        # Still show tree
+        if ATTACK_TREE and len(ATTACK_TREE.nodes) > 1:
+            console.print(ATTACK_TREE.to_ascii())
+            if Confirm.ask("Export partial tree?", default=False):
+                filepath = ATTACK_TREE.export_html()
+                console.print(f"[green]✓ Exported: {filepath}[/green]")
+        
         agent.stop()
 
 
 def show_results(ctx):
-    """Show pentest results"""
     s = f"""
 [bold]Target:[/bold] {ctx.target}
 [bold]Phase:[/bold] {ctx.current_phase.value}
@@ -462,8 +804,46 @@ def show_results(ctx):
     console.print(Panel(s, title="📊 Results", border_style="green"))
 
 
+def view_attack_tree():
+    """View/export attack tree"""
+    global ATTACK_TREE
+    
+    if not ATTACK_TREE:
+        console.print("[yellow]No attack tree yet. Run a pentest first.[/yellow]")
+        return
+    
+    while True:
+        console.print(f"\n[bold cyan]🌳 Attack Tree Menu[/bold cyan]\n")
+        console.print(f"  Target: [green]{ATTACK_TREE.target}[/green]")
+        console.print(f"  Nodes: {len(ATTACK_TREE.nodes)}")
+        console.print()
+        console.print("  [cyan]1[/cyan] - View ASCII tree")
+        console.print("  [cyan]2[/cyan] - View Rich tree")
+        console.print("  [cyan]3[/cyan] - Export HTML")
+        console.print("  [cyan]4[/cyan] - Export JSON")
+        console.print("  [cyan]b[/cyan] - Back")
+        
+        choice = Prompt.ask("\nSelect", default="b")
+        
+        if choice == "b":
+            break
+        elif choice == "1":
+            console.print(ATTACK_TREE.to_ascii())
+        elif choice == "2":
+            console.print(ATTACK_TREE.to_rich_tree())
+        elif choice == "3":
+            filepath = ATTACK_TREE.export_html()
+            console.print(f"[green]✓ Exported: {filepath}[/green]")
+            console.print(f"[dim]Open in browser to view interactive graph[/dim]")
+        elif choice == "4":
+            import json
+            filepath = f"attack_tree_{ATTACK_TREE.target.replace('.', '_')}.json"
+            with open(filepath, 'w') as f:
+                json.dump(ATTACK_TREE.to_dict() if hasattr(ATTACK_TREE, 'to_dict') else {}, f, indent=2, default=str)
+            console.print(f"[green]✓ Exported: {filepath}[/green]")
+
+
 async def quick_scan(ai):
-    """Quick nmap scan"""
     target = Prompt.ask("Target")
     if not target:
         return
@@ -503,7 +883,6 @@ async def quick_scan(ai):
 
 
 async def ask_ai(ai):
-    """Chat with AI"""
     console.print("\n[cyan]Ask anything ('back' to return)[/cyan]\n")
     
     while True:
@@ -519,7 +898,6 @@ async def ask_ai(ai):
 
 
 async def show_stats():
-    """Show stats"""
     mem = MemoryStore()
     await mem.initialize()
     stats = await mem.get_statistics()
@@ -534,7 +912,6 @@ async def show_stats():
 
 
 def model_menu(ai):
-    """Model selection"""
     global CURRENT_MODEL, CURRENT_PROVIDER
     
     while True:
@@ -551,8 +928,6 @@ def model_menu(ai):
         console.print(f"  Current: [green]{cur_prov} → {cur_model}[/green]")
         if is_uncensored(cur_model):
             console.print(f"  [green]🐬 Uncensored[/green]")
-        else:
-            console.print(f"  [yellow]⚠️ Standard[/yellow]")
         
         console.print(f"\n  Ollama: {'[green]✅[/green]' if models else '[red]❌[/red]'}")
         console.print(f"  OpenAI: {'[green]✅[/green]' if info.get('openai_available') else '[yellow]⚠️[/yellow]'}")
@@ -591,12 +966,6 @@ def model_menu(ai):
             
             console.print(t)
         
-        # Recommendations
-        console.print(f"\n[yellow]Recommended:[/yellow]")
-        for i, (p, m) in enumerate(all_models, 1):
-            if is_uncensored(m):
-                console.print(f"   [green]→ {i}. {m}[/green]")
-        
         console.print(f"\n[dim]Enter number or 'b' to go back[/dim]")
         
         choice = Prompt.ask("\nSelect", default="b")
@@ -622,7 +991,6 @@ def model_menu(ai):
 
 
 async def main():
-    """Main"""
     global CURRENT_MODEL, CURRENT_PROVIDER
     
     parser = argparse.ArgumentParser(description="Kali-GPT")
@@ -631,7 +999,6 @@ async def main():
     parser.add_argument("--model", "-m", help="Model")
     args = parser.parse_args()
     
-    # Auto-pick best model
     if args.model:
         os.environ["OLLAMA_MODEL"] = args.model
         CURRENT_MODEL = args.model
@@ -656,8 +1023,7 @@ async def main():
         if is_uncensored(CURRENT_MODEL):
             console.print(f"[green]🐬 {CURRENT_PROVIDER} → {CURRENT_MODEL}[/green]\n")
         else:
-            console.print(f"[yellow]⚠️ {CURRENT_PROVIDER} → {CURRENT_MODEL}[/yellow]")
-            console.print(f"[dim]Use option 6 for uncensored model[/dim]\n")
+            console.print(f"[yellow]⚠️ {CURRENT_PROVIDER} → {CURRENT_MODEL}[/yellow]\n")
             
     except Exception as e:
         console.print(f"[red]Failed: {e}[/red]")
@@ -666,12 +1032,10 @@ async def main():
         console.print("  ./install-models.sh")
         return
     
-    # Direct target
     if args.target:
         await run_pentest(ai, args.target)
         return
     
-    # Menu loop
     while True:
         try:
             show_menu()
@@ -692,6 +1056,8 @@ async def main():
                 await show_stats()
             elif c == "6":
                 model_menu(ai)
+            elif c == "7":
+                view_attack_tree()
                 
         except KeyboardInterrupt:
             console.print("\n")
