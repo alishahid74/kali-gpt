@@ -1,12 +1,16 @@
 #!/usr/bin/env python3
 """
-Kali-GPT Autonomous Mode v3.1 - Attack Tree Visualization
+Kali-GPT Autonomous Mode v3.3 - Multi-Agent Collaboration
 
-New in v3.1:
-- Attack Tree visualization (ASCII + HTML)
-- Real-time tree updates during pentest
-- Export attack path as interactive HTML
-- View tree anytime with Option 7
+New in v3.3:
+- Multi-Agent Mode (Option 9)
+- Recon, Web, and Exploit agents work together
+- Real-time finding sharing between agents
+- Collaborative penetration testing
+
+Previous:
+- Fine-tune via Google Colab (Option 8)
+- Attack Tree visualization (Option 7)
 
 Usage:
     python3 kali-gpt-autonomous.py
@@ -20,6 +24,7 @@ import subprocess
 import shutil
 import httpx
 import re
+import webbrowser
 from datetime import datetime
 from pathlib import Path
 from dotenv import load_dotenv
@@ -42,6 +47,20 @@ from kali_gpt.agents.autonomous_agent import (
 from kali_gpt.knowledge.mitre_attack import get_mitre_kb
 from kali_gpt.knowledge.tool_chains import ToolChainBuilder
 from kali_gpt.memory.store import MemoryStore
+
+# Try to import fine-tuning integration (optional)
+try:
+    from kali_gpt.finetune_integration import finetune_menu
+    FINETUNE_AVAILABLE = True
+except ImportError:
+    FINETUNE_AVAILABLE = False
+
+# Try to import multi-agent system (optional)
+try:
+    from kali_gpt.multi_agent import MultiAgentPentest, multi_agent_menu
+    MULTIAGENT_AVAILABLE = True
+except ImportError:
+    MULTIAGENT_AVAILABLE = False
 
 console = Console()
 
@@ -480,7 +499,7 @@ def show_banner():
 ██║  ██╗██║  ██║███████╗██║      ╚██████╔╝██║        ██║   
 ╚═╝  ╚═╝╚═╝  ╚═╝╚══════╝╚═╝       ╚═════╝ ╚═╝        ╚═╝   
 [/bold cyan]
-[bold green]    🤖 AUTONOMOUS MODE - v3.1 (Attack Tree)[/bold green]
+[bold green]    🤖 AUTONOMOUS MODE - v3.3 (Multi-Agent)[/bold green]
 [dim]    AI-Powered Penetration Testing[/dim]
 """
     console.print(banner)
@@ -500,6 +519,8 @@ def show_menu():
         ("5", "📊 Statistics", "Past engagements"),
         ("6", "⚙️  Models", "Select model"),
         ("7", "🌳 Attack Tree", "View/Export tree"),
+        ("8", "🧠 Fine-tune", "Train custom model"),
+        ("9", "🤖 Multi-Agent", "Collaborative pentest"),
         ("0", "🚪 Exit", ""),
     ]
     
@@ -990,6 +1011,280 @@ def model_menu(ai):
                     console.print(f"[red]Error: {e}[/red]")
 
 
+# Colab URL
+COLAB_URL = "https://colab.research.google.com/github/alishahid74/kali-gpt/blob/main/fine_tune/Kali_GPT_Fine_Tuning.ipynb"
+
+
+async def inline_finetune_menu():
+    """Inline fine-tuning menu (when module not available)"""
+    
+    while True:
+        console.print(f"\n[bold cyan]{'='*60}[/bold cyan]")
+        console.print(f"[bold]            🧠 FINE-TUNE YOUR OWN MODEL[/bold]")
+        console.print(f"[bold cyan]{'='*60}[/bold cyan]\n")
+        
+        console.print("[dim]Train a custom AI model for pentesting - no local GPU needed![/dim]\n")
+        
+        table = Table(box=box.ROUNDED, show_header=False)
+        table.add_column("", style="cyan", width=5)
+        table.add_column("", style="white")
+        table.add_column("", style="dim")
+        
+        table.add_row("1", "🚀 Open Google Colab", "Train in browser (free GPU)")
+        table.add_row("2", "📖 View Instructions", "How it works")
+        table.add_row("3", "📊 Generate Training Data", "From attack tree")
+        table.add_row("b", "⬅️  Back", "Return to main menu")
+        
+        console.print(table)
+        
+        choice = Prompt.ask("\nSelect", default="b")
+        
+        if choice == "b":
+            break
+        
+        elif choice == "1":
+            console.print("\n[cyan]🚀 Opening Google Colab...[/cyan]\n")
+            console.print(Panel(
+                f"""[bold]Google Colab Fine-Tuning[/bold]
+
+1. The notebook will open in your browser
+2. Click [cyan]Runtime → Change runtime type → T4 GPU[/cyan]
+3. Click [cyan]Runtime → Run all[/cyan]
+4. Wait ~20 minutes for training
+5. Download your fine-tuned model!
+
+[yellow]URL:[/yellow] {COLAB_URL}""",
+                title="📋 Instructions",
+                border_style="cyan"
+            ))
+            
+            if Confirm.ask("\nOpen Colab now?", default=True):
+                webbrowser.open(COLAB_URL)
+                console.print("[green]✓ Opened in browser![/green]")
+        
+        elif choice == "2":
+            console.print(Panel(
+                """[bold]How Fine-Tuning Works:[/bold]
+
+1. [cyan]Training Data[/cyan]
+   The Colab notebook includes 85+ pentesting examples.
+   You can also add your own custom examples.
+
+2. [cyan]Base Model[/cyan]
+   We fine-tune Llama 3 8B using LoRA (efficient training).
+   Only needs ~8GB GPU memory.
+
+3. [cyan]Training Time[/cyan]
+   ~20 minutes on free Google Colab T4 GPU.
+
+4. [cyan]Result[/cyan]
+   A custom model tuned for pentesting commands.
+   Export and use with Ollama!
+
+[yellow]Benefits:[/yellow]
+• Better command generation
+• Fewer refusals on security queries
+• Understands your testing style
+• Works offline with Ollama""",
+                title="ℹ️  Fine-Tuning Guide",
+                border_style="blue"
+            ))
+        
+        elif choice == "3":
+            global ATTACK_TREE
+            if ATTACK_TREE and len(ATTACK_TREE.nodes) > 1:
+                console.print(f"\n[green]Attack tree available for {ATTACK_TREE.target}[/green]")
+                console.print(f"Nodes: {len(ATTACK_TREE.nodes)}")
+                console.print("\n[yellow]To generate training data:[/yellow]")
+                console.print("1. Open Google Colab (option 1)")
+                console.print("2. In Step 2, manually add examples based on your pentest")
+                console.print("\n[dim]Full integration available in kali_gpt/finetune_integration.py[/dim]")
+            else:
+                console.print("[yellow]No attack tree available yet.[/yellow]")
+                console.print("[dim]Run a pentest first (option 1 in main menu).[/dim]")
+        
+        input("\nPress Enter to continue...")
+
+
+async def run_multi_agent(ai):
+    """Run multi-agent pentest with external module"""
+    target = Prompt.ask("Target")
+    if not target:
+        return
+    
+    target = target.replace("http://", "").replace("https://", "").rstrip("/")
+    
+    pentest = MultiAgentPentest(target, ai)
+    results = await pentest.run()
+    
+    console.print(f"\n[bold green]Multi-Agent Pentest Complete![/bold green]")
+    console.print(f"Total findings: {results.get('total', 0)}")
+
+
+async def inline_multi_agent(ai):
+    """Inline multi-agent menu"""
+    
+    while True:
+        console.print(f"\n[bold cyan]{'='*60}[/bold cyan]")
+        console.print(f"[bold]            🤖 MULTI-AGENT MODE[/bold]")
+        console.print(f"[bold cyan]{'='*60}[/bold cyan]\n")
+        
+        console.print("[dim]Multiple AI agents collaborate on penetration testing![/dim]\n")
+        
+        console.print(Panel(
+            """[bold]How it works:[/bold]
+
+[cyan]🔍 Recon Agent[/cyan]
+   Discovers ports, services, and attack surface
+
+[green]🕸️  Web Agent[/green]
+   Tests web applications, finds directories and vulns
+
+[red]💥 Exploit Agent[/red]
+   Attempts exploitation of discovered vulnerabilities
+
+All agents share findings in real-time and work together!""",
+            title="Agent Team",
+            border_style="cyan"
+        ))
+        
+        table = Table(box=box.ROUNDED, show_header=False)
+        table.add_column("", style="cyan", width=5)
+        table.add_column("", style="white")
+        
+        table.add_row("1", "🚀 Start Multi-Agent Pentest")
+        table.add_row("b", "⬅️  Back")
+        
+        console.print(table)
+        
+        choice = Prompt.ask("\nSelect", default="b")
+        
+        if choice == "b":
+            break
+        
+        elif choice == "1":
+            target = Prompt.ask("Target IP/domain")
+            if not target:
+                continue
+            
+            target = target.replace("http://", "").replace("https://", "").rstrip("/")
+            
+            console.print(f"\n[bold green]🎯 Starting Multi-Agent Pentest: {target}[/bold green]\n")
+            
+            # Create simple multi-agent run inline
+            await run_simple_multi_agent(ai, target)
+
+
+async def run_simple_multi_agent(ai, target):
+    """Simple inline multi-agent implementation"""
+    global ATTACK_TREE
+    
+    # Initialize attack tree
+    ATTACK_TREE = AttackTree(target)
+    
+    console.print("[cyan]═══ Phase 1: Reconnaissance ═══[/cyan]\n")
+    console.print("[cyan]🔍 Recon Agent starting...[/cyan]")
+    
+    # Recon phase
+    cmds_recon = [
+        f"nmap -sV -sC -T4 --top-ports 1000 {target}",
+        f"whatweb https://{target} -q"
+    ]
+    
+    ports_found = []
+    for cmd in cmds_recon:
+        console.print(f"  [dim]$ {cmd}[/dim]")
+        try:
+            result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=180)
+            output = result.stdout + result.stderr
+            
+            # Parse ports from nmap
+            import re
+            for match in re.finditer(r'(\d+)/tcp\s+open\s+(\S+)', output):
+                port, service = match.groups()
+                ports_found.append((port, service))
+                ATTACK_TREE.add_discovery(f"Port {port} ({service})", parent=ATTACK_TREE.root)
+                console.print(f"    [green]→ Port {port} ({service})[/green]")
+            
+            ATTACK_TREE.add_action(cmd.split()[0], cmd, True, output)
+        except Exception as e:
+            console.print(f"    [red]Error: {e}[/red]")
+    
+    console.print(f"\n[cyan]Recon complete: {len(ports_found)} ports found[/cyan]\n")
+    
+    # Web phase
+    console.print("[cyan]═══ Phase 2: Web Testing ═══[/cyan]\n")
+    console.print("[green]🕸️  Web Agent starting...[/green]")
+    
+    web_ports = [p for p, s in ports_found if 'http' in s.lower()]
+    if not web_ports:
+        web_ports = ['80', '443']
+    
+    dirs_found = []
+    for port in web_ports[:2]:  # Test up to 2 web ports
+        proto = "https" if port in ['443', '8443'] else "http"
+        url = f"{proto}://{target}"
+        
+        cmd = f"gobuster dir -u {url} -w /usr/share/wordlists/dirb/common.txt -t 30 -q -k --no-error 2>/dev/null | head -20"
+        console.print(f"  [dim]$ gobuster ... {url}[/dim]")
+        
+        try:
+            result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=120)
+            for line in result.stdout.split('\n'):
+                if '(Status:' in line:
+                    dirs_found.append(line.strip())
+                    console.print(f"    [green]→ {line.strip()[:60]}[/green]")
+            
+            web_node = ATTACK_TREE.add_action("gobuster", cmd, True, result.stdout)
+            for d in dirs_found[-5:]:
+                ATTACK_TREE.add_finding(d[:40], parent=web_node, risk="low")
+        except Exception as e:
+            console.print(f"    [red]Error: {e}[/red]")
+    
+    console.print(f"\n[green]Web testing complete: {len(dirs_found)} directories found[/green]\n")
+    
+    # Exploit analysis phase
+    console.print("[cyan]═══ Phase 3: Vulnerability Analysis ═══[/cyan]\n")
+    console.print("[red]💥 Exploit Agent analyzing...[/red]")
+    
+    # Ask AI for exploitation suggestions
+    findings_summary = f"""
+Target: {target}
+Ports found: {[f"{p} ({s})" for p, s in ports_found]}
+Directories found: {dirs_found[:10]}
+"""
+    
+    prompt = f"""Based on these pentest findings, suggest 2-3 specific exploitation commands to try:
+
+{findings_summary}
+
+Output format - just the commands, one per line:
+[command 1]
+[command 2]
+[command 3]"""
+    
+    response = ai.ask(prompt)
+    console.print(f"\n[yellow]AI Exploitation Suggestions:[/yellow]")
+    for line in response.split('\n')[:5]:
+        line = line.strip()
+        if line and not line.startswith('#'):
+            console.print(f"  • {line}")
+    
+    # Show results
+    console.print(f"\n[bold cyan]═══ Multi-Agent Results ═══[/bold cyan]\n")
+    
+    console.print(f"[bold]Target:[/bold] {target}")
+    console.print(f"[bold]Ports:[/bold] {len(ports_found)}")
+    console.print(f"[bold]Directories:[/bold] {len(dirs_found)}")
+    
+    # Show attack tree
+    console.print(ATTACK_TREE.to_ascii())
+    
+    if Confirm.ask("Export attack tree?", default=False):
+        filepath = ATTACK_TREE.export_html()
+        console.print(f"[green]✓ Exported: {filepath}[/green]")
+
+
 async def main():
     global CURRENT_MODEL, CURRENT_PROVIDER
     
@@ -1058,6 +1353,16 @@ async def main():
                 model_menu(ai)
             elif c == "7":
                 view_attack_tree()
+            elif c == "8":
+                if FINETUNE_AVAILABLE:
+                    await finetune_menu(ATTACK_TREE)
+                else:
+                    await inline_finetune_menu()
+            elif c == "9":
+                if MULTIAGENT_AVAILABLE:
+                    await multi_agent_menu(ai, ATTACK_TREE)
+                else:
+                    await inline_multi_agent(ai)
                 
         except KeyboardInterrupt:
             console.print("\n")
