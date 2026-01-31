@@ -1,0 +1,53 @@
+{
+  "name": "kali-gpt",
+  "displayName": "Kali-GPT",
+  "description": "AI-Powered Penetration Testing - 220+ Security Tools",
+  "version": "4.0.0",
+  "publisher": "kali-gpt",
+  "engines": { "vscode": "^1.74.0" },
+  "categories": ["Other", "Testing"],
+  "activationEvents": ["onStartupFinished"],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      { "command": "kali-gpt.scan", "title": "Kali-GPT: Security Scan" },
+      { "command": "kali-gpt.ask", "title": "Kali-GPT: Ask AI" },
+      { "command": "kali-gpt.nmap", "title": "Kali-GPT: Nmap Scan" },
+      { "command": "kali-gpt.gobuster", "title": "Kali-GPT: Directory Enum" },
+      { "command": "kali-gpt.nuclei", "title": "Kali-GPT: Vuln Scan" },
+      { "command": "kali-gpt.tools", "title": "Kali-GPT: Browse Tools" }
+    ],
+    "viewsContainers": {
+      "activitybar": [{ "id": "kali-gpt", "title": "Kali-GPT", "icon": "$(shield)" }]
+    },
+    "views": {
+      "kali-gpt": [
+        { "id": "kali-gpt-tools", "name": "Tools (220+)" },
+        { "id": "kali-gpt-scans", "name": "Scans" },
+        { "id": "kali-gpt-findings", "name": "Findings" }
+      ]
+    },
+    "configuration": {
+      "title": "Kali-GPT",
+      "properties": {
+        "kali-gpt.serverUrl": { "type": "string", "default": "http://localhost:8888" },
+        "kali-gpt.ollamaModel": { "type": "string", "default": "llama3.2" }
+      }
+    },
+    "keybindings": [
+      { "command": "kali-gpt.scan", "key": "ctrl+shift+k", "mac": "cmd+shift+k" }
+    ]
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./"
+  },
+  "devDependencies": {
+    "@types/node": "^18.0.0",
+    "@types/vscode": "^1.74.0",
+    "typescript": "^4.9.0"
+  },
+  "dependencies": {
+    "axios": "^1.6.0"
+  }
+}
