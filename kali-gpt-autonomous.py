@@ -1,20 +1,34 @@
 #!/usr/bin/env python3
 """
-Kali-GPT Autonomous Mode v3.3 - Multi-Agent Collaboration
+Kali-GPT v4.0 - Ultimate AI Penetration Testing Framework
 
-New in v3.3:
-- Multi-Agent Mode (Option 9)
-- Recon, Web, and Exploit agents work together
-- Real-time finding sharing between agents
-- Collaborative penetration testing
+🚀 NEW IN v4.0:
+- 220+ Security Tools (vs HexStrike's 150+)
+- 12 Specialized AI Agents
+- Cloud Security Module (AWS/Azure/GCP/K8s)
+- Binary Analysis & CTF Toolkit
+- Browser Automation (Selenium/Playwright)
+- MCP Server for IDE Integration
+- 100% FREE - Runs locally with Ollama
 
-Previous:
-- Fine-tune via Google Colab (Option 8)
-- Attack Tree visualization (Option 7)
+Features:
+- Option 1: Autonomous AI Pentest
+- Option 2: Step-by-Step Guided Mode
+- Option 3: Quick Scan (nmap)
+- Option 4: Ask AI (Chat mode)
+- Option 5: Statistics
+- Option 6: Model Selection
+- Option 7: Attack Tree Visualization
+- Option 8: Fine-tune Custom Model
+- Option 9: Multi-Agent Collaboration (12 agents)
+- Option 10: Cloud Security Assessment
+- Option 11: CTF Mode
+- Option 12: Browser Automation
 
 Usage:
     python3 kali-gpt-autonomous.py
     python3 kali-gpt-autonomous.py --model kali-pentester
+    python3 kali-gpt-autonomous.py --mcp  # Start MCP server
 """
 
 import asyncio
@@ -61,6 +75,36 @@ try:
     MULTIAGENT_AVAILABLE = True
 except ImportError:
     MULTIAGENT_AVAILABLE = False
+
+# Try to import v4 agents
+try:
+    from kali_gpt.agents_v4 import MultiAgentPentest as MultiAgentV4
+    AGENTS_V4_AVAILABLE = True
+except ImportError:
+    AGENTS_V4_AVAILABLE = False
+
+# Try to import tool registry
+try:
+    from kali_gpt.tool_registry import TOOLS, count as tool_count, stats as tool_stats
+    TOOL_REGISTRY_AVAILABLE = True
+except ImportError:
+    TOOL_REGISTRY_AVAILABLE = False
+    tool_count = lambda: 50
+    tool_stats = lambda: {}
+
+# Try to import browser agent
+try:
+    from kali_gpt.browser_agent import BrowserAgent, display_browser_result
+    BROWSER_AVAILABLE = True
+except ImportError:
+    BROWSER_AVAILABLE = False
+
+# Try to import MCP server
+try:
+    from kali_gpt.mcp_server import KALI_TOOLS, execute_tool
+    MCP_AVAILABLE = True
+except ImportError:
+    MCP_AVAILABLE = False
 
 console = Console()
 
@@ -499,14 +543,17 @@ def show_banner():
 ██║  ██╗██║  ██║███████╗██║      ╚██████╔╝██║        ██║   
 ╚═╝  ╚═╝╚═╝  ╚═╝╚══════╝╚═╝       ╚═════╝ ╚═╝        ╚═╝   
 [/bold cyan]
-[bold green]    🤖 AUTONOMOUS MODE - v3.3 (Multi-Agent)[/bold green]
-[dim]    AI-Powered Penetration Testing[/dim]
+[bold green]    🤖 KALI-GPT v4.0 - Ultimate AI Pentest Framework[/bold green]
+[dim]    220+ Tools | 12 Agents | Cloud/CTF/Browser | 100% FREE[/dim]
 """
     console.print(banner)
 
 
 def show_menu():
-    table = Table(title="Main Menu", box=box.ROUNDED, show_header=False)
+    # Show tool count
+    tools = tool_count() if TOOL_REGISTRY_AVAILABLE else 50
+    
+    table = Table(title=f"Main Menu ({tools}+ Tools Available)", box=box.ROUNDED, show_header=False)
     table.add_column("", style="cyan", width=5)
     table.add_column("", style="white")
     table.add_column("", style="dim")
@@ -520,7 +567,11 @@ def show_menu():
         ("6", "⚙️  Models", "Select model"),
         ("7", "🌳 Attack Tree", "View/Export tree"),
         ("8", "🧠 Fine-tune", "Train custom model"),
-        ("9", "🤖 Multi-Agent", "Collaborative pentest"),
+        ("9", "🤖 Multi-Agent", "12 AI agents collaborate"),
+        ("c", "☁️  Cloud Security", "AWS/Azure/GCP/K8s"),
+        ("t", "🏆 CTF Mode", "Forensics & stego"),
+        ("b", "🌐 Browser", "Web automation"),
+        ("i", "📋 Tool Info", "220+ tools list"),
         ("0", "🚪 Exit", ""),
     ]
     
@@ -1363,6 +1414,14 @@ async def main():
                     await multi_agent_menu(ai, ATTACK_TREE)
                 else:
                     await inline_multi_agent(ai)
+            elif c == "c":
+                await cloud_security_menu(ai)
+            elif c == "t":
+                await ctf_mode_menu(ai)
+            elif c == "b":
+                await browser_menu(ai)
+            elif c == "i":
+                show_tool_info()
                 
         except KeyboardInterrupt:
             console.print("\n")
@@ -1370,5 +1429,870 @@ async def main():
                 break
 
 
+# ============================================================================
+# CLOUD SECURITY MODULE (NEW in v4.0)
+# ============================================================================
+
+async def cloud_security_menu(ai):
+    """Cloud Security Assessment Menu"""
+    console.print(Panel(
+        "[bold]☁️  CLOUD SECURITY ASSESSMENT[/bold]\n\n"
+        "Assess cloud infrastructure security:\n"
+        "• AWS - S3, IAM, EC2, Lambda\n"
+        "• Azure - Storage, AD, VMs\n"
+        "• GCP - Storage, IAM, Compute\n"
+        "• Kubernetes - Clusters, RBAC, Secrets",
+        title="Cloud Security",
+        border_style="blue"
+    ))
+    
+    table = Table(show_header=False, box=box.ROUNDED)
+    table.add_column("", style="cyan", width=5)
+    table.add_column("", style="white")
+    
+    table.add_row("1", "🔶 AWS Security Scan")
+    table.add_row("2", "🔷 Azure Security Scan")
+    table.add_row("3", "🟢 GCP Security Scan")
+    table.add_row("4", "☸️  Kubernetes Audit")
+    table.add_row("5", "🐳 Docker Security")
+    table.add_row("6", "🔍 S3 Bucket Scan")
+    table.add_row("7", "🔐 Secret Scanner")
+    table.add_row("b", "⬅️  Back")
+    console.print(table)
+    
+    choice = Prompt.ask("Select", default="b")
+    
+    if choice == "1":
+        await aws_security_scan(ai)
+    elif choice == "2":
+        await azure_security_scan(ai)
+    elif choice == "3":
+        await gcp_security_scan(ai)
+    elif choice == "4":
+        await kubernetes_audit(ai)
+    elif choice == "5":
+        await docker_security_scan(ai)
+    elif choice == "6":
+        await s3_bucket_scan(ai)
+    elif choice == "7":
+        await secret_scanner(ai)
+
+
+async def aws_security_scan(ai):
+    """AWS Security Assessment"""
+    console.print("\n[bold cyan]🔶 AWS Security Scan[/bold cyan]\n")
+    
+    # Check for prowler
+    if not shutil.which("prowler"):
+        console.print("[yellow]⚠ Prowler not installed. Install: pip install prowler[/yellow]")
+        console.print("[dim]Running basic AWS CLI checks instead...[/dim]\n")
+    
+    checks = [
+        ("S3 Public Buckets", "aws s3api list-buckets --query 'Buckets[*].Name' --output text 2>/dev/null | head -5"),
+        ("IAM Users", "aws iam list-users --query 'Users[*].UserName' --output text 2>/dev/null | head -5"),
+        ("Security Groups", "aws ec2 describe-security-groups --query 'SecurityGroups[?IpPermissions[?IpRanges[?CidrIp==`0.0.0.0/0`]]].GroupId' --output text 2>/dev/null | head -5"),
+    ]
+    
+    if shutil.which("prowler"):
+        console.print("[cyan]Running Prowler AWS assessment...[/cyan]")
+        console.print("[dim]This may take several minutes[/dim]\n")
+        
+        try:
+            result = subprocess.run(
+                "prowler aws --severity critical high -M csv 2>&1 | head -50",
+                shell=True, capture_output=True, text=True, timeout=300
+            )
+            console.print(result.stdout)
+        except subprocess.TimeoutExpired:
+            console.print("[yellow]Scan timed out[/yellow]")
+    else:
+        for name, cmd in checks:
+            console.print(f"[cyan]Checking {name}...[/cyan]")
+            try:
+                result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=30)
+                if result.stdout.strip():
+                    console.print(f"  {result.stdout.strip()}")
+                else:
+                    console.print("  [dim]No results or not configured[/dim]")
+            except:
+                console.print("  [dim]AWS CLI not configured[/dim]")
+    
+    console.print("\n[green]✓ AWS scan complete[/green]")
+    Prompt.ask("\nPress Enter to continue")
+
+
+async def azure_security_scan(ai):
+    """Azure Security Assessment"""
+    console.print("\n[bold blue]🔷 Azure Security Scan[/bold blue]\n")
+    
+    if not shutil.which("az"):
+        console.print("[yellow]⚠ Azure CLI not installed[/yellow]")
+        console.print("Install: curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash")
+        Prompt.ask("\nPress Enter to continue")
+        return
+    
+    console.print("[cyan]Running Azure security checks...[/cyan]\n")
+    
+    checks = [
+        ("Subscription", "az account show --query name -o tsv 2>/dev/null"),
+        ("Storage Accounts", "az storage account list --query '[*].name' -o tsv 2>/dev/null | head -5"),
+        ("VMs", "az vm list --query '[*].name' -o tsv 2>/dev/null | head -5"),
+    ]
+    
+    for name, cmd in checks:
+        console.print(f"[cyan]{name}:[/cyan]")
+        try:
+            result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=30)
+            if result.stdout.strip():
+                console.print(f"  {result.stdout.strip()}")
+            else:
+                console.print("  [dim]Not configured or no results[/dim]")
+        except:
+            console.print("  [dim]Error running check[/dim]")
+    
+    Prompt.ask("\nPress Enter to continue")
+
+
+async def gcp_security_scan(ai):
+    """GCP Security Assessment"""
+    console.print("\n[bold green]🟢 GCP Security Scan[/bold green]\n")
+    
+    if not shutil.which("gcloud"):
+        console.print("[yellow]⚠ gcloud CLI not installed[/yellow]")
+        Prompt.ask("\nPress Enter to continue")
+        return
+    
+    console.print("[cyan]Running GCP security checks...[/cyan]\n")
+    
+    checks = [
+        ("Project", "gcloud config get-value project 2>/dev/null"),
+        ("Compute Instances", "gcloud compute instances list --format='value(name)' 2>/dev/null | head -5"),
+        ("Storage Buckets", "gcloud storage buckets list --format='value(name)' 2>/dev/null | head -5"),
+    ]
+    
+    for name, cmd in checks:
+        console.print(f"[cyan]{name}:[/cyan]")
+        try:
+            result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=30)
+            if result.stdout.strip():
+                console.print(f"  {result.stdout.strip()}")
+            else:
+                console.print("  [dim]Not configured[/dim]")
+        except:
+            console.print("  [dim]Error[/dim]")
+    
+    Prompt.ask("\nPress Enter to continue")
+
+
+async def kubernetes_audit(ai):
+    """Kubernetes Security Audit"""
+    console.print("\n[bold cyan]☸️  Kubernetes Security Audit[/bold cyan]\n")
+    
+    if not shutil.which("kubectl"):
+        console.print("[yellow]⚠ kubectl not installed[/yellow]")
+        Prompt.ask("\nPress Enter to continue")
+        return
+    
+    # Check cluster access
+    result = subprocess.run("kubectl cluster-info 2>&1", shell=True, capture_output=True, text=True)
+    if "error" in result.stdout.lower() or "error" in result.stderr.lower():
+        console.print("[yellow]⚠ Cannot connect to Kubernetes cluster[/yellow]")
+        Prompt.ask("\nPress Enter to continue")
+        return
+    
+    console.print("[cyan]Running Kubernetes security checks...[/cyan]\n")
+    
+    checks = [
+        ("Privileged Pods", "kubectl get pods -A -o jsonpath='{range .items[*]}{.metadata.namespace}/{.metadata.name}: {.spec.containers[*].securityContext.privileged}{\"\\n\"}{end}' 2>/dev/null | grep true | head -5"),
+        ("Secrets", "kubectl get secrets -A --no-headers 2>/dev/null | wc -l"),
+        ("Service Accounts", "kubectl get serviceaccounts -A --no-headers 2>/dev/null | wc -l"),
+        ("RBAC Roles", "kubectl get clusterroles --no-headers 2>/dev/null | wc -l"),
+        ("Network Policies", "kubectl get networkpolicies -A --no-headers 2>/dev/null | wc -l"),
+    ]
+    
+    for name, cmd in checks:
+        console.print(f"[cyan]{name}:[/cyan]")
+        try:
+            result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=30)
+            output = result.stdout.strip() or "0"
+            console.print(f"  {output}")
+        except:
+            console.print("  [dim]Error[/dim]")
+    
+    # Run kube-hunter if available
+    if shutil.which("kube-hunter"):
+        if Confirm.ask("\nRun kube-hunter scan?", default=False):
+            console.print("\n[cyan]Running kube-hunter...[/cyan]")
+            subprocess.run("kube-hunter --pod 2>&1 | head -50", shell=True)
+    
+    Prompt.ask("\nPress Enter to continue")
+
+
+async def docker_security_scan(ai):
+    """Docker Security Assessment"""
+    console.print("\n[bold cyan]🐳 Docker Security Scan[/bold cyan]\n")
+    
+    if not shutil.which("docker"):
+        console.print("[yellow]⚠ Docker not installed[/yellow]")
+        Prompt.ask("\nPress Enter to continue")
+        return
+    
+    console.print("[cyan]Running Docker security checks...[/cyan]\n")
+    
+    # List containers
+    result = subprocess.run("docker ps --format '{{.Names}}: {{.Image}}' 2>/dev/null | head -10", 
+                          shell=True, capture_output=True, text=True)
+    if result.stdout.strip():
+        console.print("[bold]Running Containers:[/bold]")
+        console.print(result.stdout)
+    
+    # Check for privileged containers
+    result = subprocess.run(
+        "docker ps --quiet 2>/dev/null | xargs -I {} docker inspect {} --format '{{.Name}}: Privileged={{.HostConfig.Privileged}}' 2>/dev/null | grep true",
+        shell=True, capture_output=True, text=True
+    )
+    if result.stdout.strip():
+        console.print("\n[red]⚠ Privileged Containers:[/red]")
+        console.print(result.stdout)
+    
+    # Run trivy if available
+    if shutil.which("trivy"):
+        image = Prompt.ask("\nScan image with Trivy (or Enter to skip)", default="")
+        if image:
+            console.print(f"\n[cyan]Scanning {image}...[/cyan]")
+            subprocess.run(f"trivy image {image} --severity HIGH,CRITICAL 2>&1 | head -50", shell=True)
+    
+    Prompt.ask("\nPress Enter to continue")
+
+
+async def s3_bucket_scan(ai):
+    """S3 Bucket Security Scan"""
+    console.print("\n[bold yellow]🔍 S3 Bucket Scanner[/bold yellow]\n")
+    
+    bucket = Prompt.ask("Bucket name (or keyword to search)")
+    
+    if not bucket:
+        return
+    
+    console.print(f"\n[cyan]Checking bucket: {bucket}[/cyan]\n")
+    
+    # Try direct access
+    checks = [
+        f"aws s3 ls s3://{bucket} --no-sign-request 2>&1 | head -10",
+        f"curl -s -I https://{bucket}.s3.amazonaws.com/ | head -5",
+    ]
+    
+    for cmd in checks:
+        result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=30)
+        if "AccessDenied" not in result.stdout and "NoSuchBucket" not in result.stdout:
+            if result.stdout.strip():
+                console.print(f"[green]Accessible![/green]")
+                console.print(result.stdout[:500])
+        else:
+            console.print(f"[dim]{result.stdout[:100]}[/dim]")
+    
+    Prompt.ask("\nPress Enter to continue")
+
+
+async def secret_scanner(ai):
+    """Scan for secrets in code/files"""
+    console.print("\n[bold red]🔐 Secret Scanner[/bold red]\n")
+    
+    path = Prompt.ask("Path to scan", default=".")
+    
+    if not os.path.exists(path):
+        console.print("[red]Path not found[/red]")
+        return
+    
+    console.print(f"\n[cyan]Scanning {path} for secrets...[/cyan]\n")
+    
+    # Use trufflehog if available
+    if shutil.which("trufflehog"):
+        console.print("[cyan]Using TruffleHog...[/cyan]")
+        subprocess.run(f"trufflehog filesystem {path} --no-update 2>&1 | head -50", shell=True)
+    elif shutil.which("gitleaks"):
+        console.print("[cyan]Using Gitleaks...[/cyan]")
+        subprocess.run(f"gitleaks detect --source {path} --no-git 2>&1 | head -50", shell=True)
+    else:
+        # Basic grep patterns
+        console.print("[cyan]Using basic pattern matching...[/cyan]")
+        patterns = [
+            ("API Keys", r"['\"][A-Za-z0-9]{32,}['\"]"),
+            ("AWS Keys", r"AKIA[0-9A-Z]{16}"),
+            ("Private Keys", r"-----BEGIN.*PRIVATE KEY-----"),
+            ("Passwords", r"password\s*=\s*['\"][^'\"]+['\"]"),
+        ]
+        
+        for name, pattern in patterns:
+            result = subprocess.run(
+                f"grep -rn '{pattern}' {path} 2>/dev/null | head -5",
+                shell=True, capture_output=True, text=True
+            )
+            if result.stdout.strip():
+                console.print(f"\n[yellow]{name}:[/yellow]")
+                console.print(result.stdout)
+    
+    Prompt.ask("\nPress Enter to continue")
+
+
+# ============================================================================
+# CTF MODE (NEW in v4.0)
+# ============================================================================
+
+async def ctf_mode_menu(ai):
+    """CTF Challenge Solving Mode"""
+    console.print(Panel(
+        "[bold]🏆 CTF MODE[/bold]\n\n"
+        "Tools for CTF challenges:\n"
+        "• Forensics - Memory, disk, file carving\n"
+        "• Steganography - Hidden data extraction\n"
+        "• Cryptography - Hash cracking, ciphers\n"
+        "• Binary - Reversing, exploitation\n"
+        "• Web - SQLi, XSS, SSTI",
+        title="CTF Mode",
+        border_style="magenta"
+    ))
+    
+    table = Table(show_header=False, box=box.ROUNDED)
+    table.add_column("", style="cyan", width=5)
+    table.add_column("", style="white")
+    
+    table.add_row("1", "🔍 Analyze File")
+    table.add_row("2", "🖼️  Steganography")
+    table.add_row("3", "🔐 Hash Crack")
+    table.add_row("4", "💾 Memory Forensics")
+    table.add_row("5", "🔬 Binary Analysis")
+    table.add_row("6", "📜 Decode/Encode")
+    table.add_row("7", "🤖 AI CTF Helper")
+    table.add_row("b", "⬅️  Back")
+    console.print(table)
+    
+    choice = Prompt.ask("Select", default="b")
+    
+    if choice == "1":
+        await analyze_file_ctf(ai)
+    elif choice == "2":
+        await stego_menu(ai)
+    elif choice == "3":
+        await hash_crack_menu(ai)
+    elif choice == "4":
+        await memory_forensics(ai)
+    elif choice == "5":
+        await binary_analysis_menu(ai)
+    elif choice == "6":
+        await decode_encode_menu(ai)
+    elif choice == "7":
+        await ai_ctf_helper(ai)
+
+
+async def analyze_file_ctf(ai):
+    """Analyze a file for CTF"""
+    console.print("\n[bold cyan]🔍 File Analysis[/bold cyan]\n")
+    
+    filepath = Prompt.ask("File path")
+    if not filepath or not os.path.exists(filepath):
+        console.print("[red]File not found[/red]")
+        return
+    
+    console.print(f"\n[cyan]Analyzing {filepath}...[/cyan]\n")
+    
+    # File type
+    result = subprocess.run(f"file '{filepath}'", shell=True, capture_output=True, text=True)
+    console.print(f"[bold]Type:[/bold] {result.stdout.strip()}")
+    
+    # Strings
+    result = subprocess.run(f"strings '{filepath}' | grep -iE 'flag|ctf|key|password|secret' | head -10", 
+                          shell=True, capture_output=True, text=True)
+    if result.stdout.strip():
+        console.print(f"\n[bold yellow]Interesting strings:[/bold yellow]")
+        console.print(result.stdout)
+    
+    # Check for flag patterns
+    result = subprocess.run(f"strings '{filepath}' | grep -oE '(flag|FLAG|CTF|HTB|THM)\\{{[^}}]+\\}}'", 
+                          shell=True, capture_output=True, text=True)
+    if result.stdout.strip():
+        console.print(f"\n[bold green]🚩 FLAGS FOUND:[/bold green]")
+        console.print(result.stdout)
+    
+    # Exiftool
+    if shutil.which("exiftool"):
+        result = subprocess.run(f"exiftool '{filepath}' 2>/dev/null | head -20", 
+                              shell=True, capture_output=True, text=True)
+        if result.stdout.strip():
+            console.print(f"\n[bold]Metadata:[/bold]")
+            console.print(result.stdout)
+    
+    # Binwalk
+    if shutil.which("binwalk"):
+        result = subprocess.run(f"binwalk '{filepath}' 2>/dev/null | head -20", 
+                              shell=True, capture_output=True, text=True)
+        if result.stdout.strip():
+            console.print(f"\n[bold]Binwalk:[/bold]")
+            console.print(result.stdout)
+    
+    Prompt.ask("\nPress Enter to continue")
+
+
+async def stego_menu(ai):
+    """Steganography tools"""
+    console.print("\n[bold magenta]🖼️  Steganography Tools[/bold magenta]\n")
+    
+    filepath = Prompt.ask("Image file path")
+    if not filepath or not os.path.exists(filepath):
+        console.print("[red]File not found[/red]")
+        return
+    
+    console.print(f"\n[cyan]Running stego tools on {filepath}...[/cyan]\n")
+    
+    # zsteg for PNG
+    if filepath.lower().endswith('.png') and shutil.which("zsteg"):
+        console.print("[bold]zsteg:[/bold]")
+        subprocess.run(f"zsteg '{filepath}' 2>&1 | head -20", shell=True)
+    
+    # steghide for JPEG
+    if filepath.lower().endswith(('.jpg', '.jpeg')) and shutil.which("steghide"):
+        console.print("\n[bold]steghide:[/bold]")
+        password = Prompt.ask("Password (empty for none)", default="")
+        if password:
+            subprocess.run(f"steghide extract -sf '{filepath}' -p '{password}' 2>&1", shell=True)
+        else:
+            subprocess.run(f"steghide info '{filepath}' 2>&1", shell=True)
+    
+    # strings
+    console.print("\n[bold]Hidden strings:[/bold]")
+    subprocess.run(f"strings '{filepath}' | grep -iE 'flag|ctf|key|secret|password' | head -10", shell=True)
+    
+    # Check LSB
+    console.print("\n[bold]Hex dump (first 100 bytes):[/bold]")
+    subprocess.run(f"xxd '{filepath}' | head -10", shell=True)
+    
+    Prompt.ask("\nPress Enter to continue")
+
+
+async def hash_crack_menu(ai):
+    """Hash cracking tools"""
+    console.print("\n[bold red]🔐 Hash Cracker[/bold red]\n")
+    
+    hash_value = Prompt.ask("Hash to crack")
+    if not hash_value:
+        return
+    
+    # Identify hash
+    console.print(f"\n[cyan]Analyzing hash: {hash_value[:50]}...[/cyan]\n")
+    
+    if shutil.which("hashid"):
+        result = subprocess.run(f"hashid '{hash_value}' 2>/dev/null | head -5", 
+                              shell=True, capture_output=True, text=True)
+        console.print(f"[bold]Possible types:[/bold]\n{result.stdout}")
+    
+    # Try crackstation-style lookup or john
+    if Confirm.ask("Attempt crack with rockyou?", default=False):
+        wordlist = "/usr/share/wordlists/rockyou.txt"
+        if not os.path.exists(wordlist):
+            wordlist = Prompt.ask("Wordlist path", default="")
+        
+        if wordlist and os.path.exists(wordlist):
+            # Write hash to temp file
+            import tempfile
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as f:
+                f.write(hash_value)
+                hash_file = f.name
+            
+            if shutil.which("john"):
+                console.print("\n[cyan]Running John the Ripper...[/cyan]")
+                subprocess.run(f"john --wordlist={wordlist} {hash_file} 2>&1 | head -20", shell=True)
+                subprocess.run(f"john --show {hash_file} 2>&1", shell=True)
+            
+            os.unlink(hash_file)
+    
+    Prompt.ask("\nPress Enter to continue")
+
+
+async def memory_forensics(ai):
+    """Memory forensics with Volatility"""
+    console.print("\n[bold cyan]💾 Memory Forensics[/bold cyan]\n")
+    
+    if not shutil.which("vol") and not shutil.which("volatility"):
+        console.print("[yellow]⚠ Volatility not installed[/yellow]")
+        console.print("Install: pip install volatility3")
+        Prompt.ask("\nPress Enter to continue")
+        return
+    
+    dump_path = Prompt.ask("Memory dump path")
+    if not dump_path or not os.path.exists(dump_path):
+        console.print("[red]File not found[/red]")
+        return
+    
+    vol_cmd = "vol" if shutil.which("vol") else "volatility"
+    
+    console.print(f"\n[cyan]Analyzing {dump_path}...[/cyan]\n")
+    
+    # Get image info
+    console.print("[bold]Image Info:[/bold]")
+    subprocess.run(f"{vol_cmd} -f '{dump_path}' windows.info 2>&1 | head -20", shell=True)
+    
+    # List processes
+    if Confirm.ask("\nList processes?", default=True):
+        subprocess.run(f"{vol_cmd} -f '{dump_path}' windows.pslist 2>&1 | head -30", shell=True)
+    
+    # Dump passwords
+    if Confirm.ask("\nExtract password hashes?", default=False):
+        subprocess.run(f"{vol_cmd} -f '{dump_path}' windows.hashdump 2>&1", shell=True)
+    
+    Prompt.ask("\nPress Enter to continue")
+
+
+async def binary_analysis_menu(ai):
+    """Binary analysis tools"""
+    console.print("\n[bold yellow]🔬 Binary Analysis[/bold yellow]\n")
+    
+    filepath = Prompt.ask("Binary file path")
+    if not filepath or not os.path.exists(filepath):
+        console.print("[red]File not found[/red]")
+        return
+    
+    console.print(f"\n[cyan]Analyzing {filepath}...[/cyan]\n")
+    
+    # File info
+    subprocess.run(f"file '{filepath}'", shell=True)
+    
+    # Checksec
+    if shutil.which("checksec"):
+        console.print("\n[bold]Security:[/bold]")
+        subprocess.run(f"checksec --file='{filepath}' 2>&1", shell=True)
+    
+    # Strings
+    console.print("\n[bold]Interesting strings:[/bold]")
+    subprocess.run(f"strings '{filepath}' | grep -iE 'flag|password|key|secret|admin' | head -10", shell=True)
+    
+    # Functions (if radare2)
+    if shutil.which("r2"):
+        console.print("\n[bold]Functions:[/bold]")
+        subprocess.run(f"r2 -q -c 'aaa; afl' '{filepath}' 2>/dev/null | head -20", shell=True)
+    
+    Prompt.ask("\nPress Enter to continue")
+
+
+async def decode_encode_menu(ai):
+    """Encoding/Decoding tools"""
+    console.print("\n[bold green]📜 Decode/Encode[/bold green]\n")
+    
+    data = Prompt.ask("Data to decode")
+    if not data:
+        return
+    
+    import base64
+    import codecs
+    
+    console.print("\n[bold]Attempting decodes:[/bold]\n")
+    
+    # Base64
+    try:
+        decoded = base64.b64decode(data).decode('utf-8', errors='ignore')
+        if decoded.isprintable():
+            console.print(f"[cyan]Base64:[/cyan] {decoded}")
+    except:
+        pass
+    
+    # Hex
+    try:
+        decoded = bytes.fromhex(data).decode('utf-8', errors='ignore')
+        if decoded.isprintable():
+            console.print(f"[cyan]Hex:[/cyan] {decoded}")
+    except:
+        pass
+    
+    # ROT13
+    try:
+        decoded = codecs.decode(data, 'rot_13')
+        console.print(f"[cyan]ROT13:[/cyan] {decoded}")
+    except:
+        pass
+    
+    # Binary
+    try:
+        if all(c in '01 ' for c in data):
+            decoded = ''.join(chr(int(b, 2)) for b in data.split())
+            console.print(f"[cyan]Binary:[/cyan] {decoded}")
+    except:
+        pass
+    
+    Prompt.ask("\nPress Enter to continue")
+
+
+async def ai_ctf_helper(ai):
+    """AI-assisted CTF solving"""
+    console.print("\n[bold magenta]🤖 AI CTF Helper[/bold magenta]\n")
+    console.print("[dim]Describe your CTF challenge and I'll help solve it[/dim]\n")
+    
+    while True:
+        question = Prompt.ask("\n[CTF]", default="")
+        if not question or question.lower() in ['exit', 'quit', 'back', 'b']:
+            break
+        
+        prompt = f"""You are a CTF expert. Help solve this challenge:
+
+{question}
+
+Provide:
+1. Challenge type identification
+2. Tools to use
+3. Step-by-step approach
+4. Example commands
+
+Be specific and practical."""
+        
+        response = ai.ask(prompt)
+        console.print(Panel(Markdown(response), border_style="magenta"))
+
+
+# ============================================================================
+# BROWSER AUTOMATION (NEW in v4.0)
+# ============================================================================
+
+async def browser_menu(ai):
+    """Browser automation menu"""
+    console.print(Panel(
+        "[bold]🌐 BROWSER AUTOMATION[/bold]\n\n"
+        "Headless browser testing:\n"
+        "• Screenshot capture\n"
+        "• Security header analysis\n"
+        "• Form detection\n"
+        "• Technology fingerprinting\n"
+        "• DOM analysis",
+        title="Browser Agent",
+        border_style="green"
+    ))
+    
+    if not BROWSER_AVAILABLE:
+        console.print("[yellow]⚠ Browser module not fully loaded[/yellow]")
+        console.print("Install: pip install selenium playwright")
+        console.print("         playwright install chromium\n")
+    
+    table = Table(show_header=False, box=box.ROUNDED)
+    table.add_column("", style="cyan", width=5)
+    table.add_column("", style="white")
+    
+    table.add_row("1", "🔍 Analyze URL")
+    table.add_row("2", "📸 Screenshot")
+    table.add_row("3", "🔒 Security Headers")
+    table.add_row("4", "📝 Form Detection")
+    table.add_row("b", "⬅️  Back")
+    console.print(table)
+    
+    choice = Prompt.ask("Select", default="b")
+    
+    if choice == "1":
+        await browser_analyze_url(ai)
+    elif choice == "2":
+        await browser_screenshot(ai)
+    elif choice == "3":
+        await check_security_headers(ai)
+    elif choice == "4":
+        await detect_forms(ai)
+
+
+async def browser_analyze_url(ai):
+    """Analyze URL with browser"""
+    url = Prompt.ask("URL to analyze")
+    if not url:
+        return
+    
+    if not url.startswith(('http://', 'https://')):
+        url = f"https://{url}"
+    
+    console.print(f"\n[cyan]Analyzing {url}...[/cyan]\n")
+    
+    if BROWSER_AVAILABLE:
+        try:
+            agent = BrowserAgent(headless=True)
+            result = await agent.analyze_url(url)
+            display_browser_result(result)
+            await agent.close()
+        except Exception as e:
+            console.print(f"[red]Error: {e}[/red]")
+    else:
+        # Fallback to curl
+        console.print("[dim]Using curl (install selenium for full analysis)[/dim]\n")
+        subprocess.run(f"curl -sI '{url}' | head -20", shell=True)
+    
+    Prompt.ask("\nPress Enter to continue")
+
+
+async def browser_screenshot(ai):
+    """Take screenshot of URL"""
+    url = Prompt.ask("URL")
+    if not url:
+        return
+    
+    if not url.startswith(('http://', 'https://')):
+        url = f"https://{url}"
+    
+    console.print(f"\n[cyan]Taking screenshot of {url}...[/cyan]")
+    
+    if BROWSER_AVAILABLE:
+        try:
+            agent = BrowserAgent(headless=True)
+            result = await agent.analyze_url(url)
+            if result.screenshot_path:
+                console.print(f"\n[green]✓ Screenshot saved: {result.screenshot_path}[/green]")
+            await agent.close()
+        except Exception as e:
+            console.print(f"[red]Error: {e}[/red]")
+    else:
+        # Try cutycapt or wkhtmltoimage
+        if shutil.which("cutycapt"):
+            outfile = f"/tmp/screenshot_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
+            subprocess.run(f"cutycapt --url='{url}' --out={outfile}", shell=True)
+            console.print(f"[green]Screenshot: {outfile}[/green]")
+        else:
+            console.print("[yellow]Install selenium or cutycapt for screenshots[/yellow]")
+    
+    Prompt.ask("\nPress Enter to continue")
+
+
+async def check_security_headers(ai):
+    """Check security headers"""
+    url = Prompt.ask("URL")
+    if not url:
+        return
+    
+    if not url.startswith(('http://', 'https://')):
+        url = f"https://{url}"
+    
+    console.print(f"\n[cyan]Checking security headers for {url}...[/cyan]\n")
+    
+    # Get headers
+    result = subprocess.run(f"curl -sI '{url}'", shell=True, capture_output=True, text=True)
+    headers = result.stdout
+    
+    # Check security headers
+    security_headers = {
+        "Strict-Transport-Security": "HSTS",
+        "X-Frame-Options": "Clickjacking protection",
+        "X-Content-Type-Options": "MIME sniffing protection",
+        "X-XSS-Protection": "XSS filter",
+        "Content-Security-Policy": "CSP",
+        "Referrer-Policy": "Referrer control",
+        "Permissions-Policy": "Feature policy",
+    }
+    
+    console.print("[bold]Security Headers Analysis:[/bold]\n")
+    
+    found = 0
+    for header, desc in security_headers.items():
+        if header.lower() in headers.lower():
+            console.print(f"  [green]✓[/green] {header} ({desc})")
+            found += 1
+        else:
+            console.print(f"  [red]✗[/red] {header} ({desc}) - MISSING")
+    
+    score = (found / len(security_headers)) * 100
+    color = "green" if score >= 70 else "yellow" if score >= 40 else "red"
+    console.print(f"\n[{color}]Score: {score:.0f}% ({found}/{len(security_headers)})[/{color}]")
+    
+    Prompt.ask("\nPress Enter to continue")
+
+
+async def detect_forms(ai):
+    """Detect forms on a page"""
+    url = Prompt.ask("URL")
+    if not url:
+        return
+    
+    if not url.startswith(('http://', 'https://')):
+        url = f"https://{url}"
+    
+    console.print(f"\n[cyan]Detecting forms on {url}...[/cyan]\n")
+    
+    # Get page content
+    result = subprocess.run(f"curl -sL '{url}'", shell=True, capture_output=True, text=True)
+    html = result.stdout
+    
+    # Find forms
+    import re
+    forms = re.findall(r'<form[^>]*>(.*?)</form>', html, re.DOTALL | re.IGNORECASE)
+    
+    console.print(f"[bold]Found {len(forms)} form(s):[/bold]\n")
+    
+    for i, form in enumerate(forms[:5], 1):
+        # Extract action
+        action = re.search(r'action=["\']([^"\']*)["\']', form, re.IGNORECASE)
+        method = re.search(r'method=["\']([^"\']*)["\']', form, re.IGNORECASE)
+        inputs = re.findall(r'<input[^>]*name=["\']([^"\']*)["\']', form, re.IGNORECASE)
+        
+        console.print(f"[cyan]Form {i}:[/cyan]")
+        console.print(f"  Action: {action.group(1) if action else 'self'}")
+        console.print(f"  Method: {method.group(1).upper() if method else 'GET'}")
+        console.print(f"  Inputs: {', '.join(inputs[:5])}")
+    
+    Prompt.ask("\nPress Enter to continue")
+
+
+# ============================================================================
+# TOOL INFO (NEW in v4.0)
+# ============================================================================
+
+def show_tool_info():
+    """Show available tools"""
+    console.print(Panel(
+        f"[bold]📋 KALI-GPT TOOL REGISTRY[/bold]\n\n"
+        f"Total Tools: [green]{tool_count()}[/green]\n\n"
+        "Categories available for penetration testing,\n"
+        "CTF challenges, cloud security, and more.",
+        title="Tool Registry v2.0",
+        border_style="cyan"
+    ))
+    
+    if TOOL_REGISTRY_AVAILABLE:
+        stats = tool_stats()
+        
+        table = Table(title="Tools by Category", box=box.ROUNDED)
+        table.add_column("Category", style="cyan")
+        table.add_column("Count", style="green", justify="right")
+        table.add_column("Examples", style="dim")
+        
+        examples = {
+            "web": "gobuster, ffuf, nuclei, sqlmap",
+            "recon": "nmap, masscan, enum4linux",
+            "binary": "gdb, radare2, checksec",
+            "ctf": "volatility, steghide, binwalk",
+            "cloud": "prowler, trivy, aws-cli",
+            "osint": "sherlock, amass, shodan",
+            "password": "hydra, john, hashcat",
+            "container": "trivy, kube-hunter, kubectl",
+            "exploit": "metasploit, searchsploit",
+            "wireless": "aircrack-ng, wifite",
+            "network": "netcat, wireshark, tcpdump",
+        }
+        
+        for cat, count in sorted(stats.items(), key=lambda x: -x[1]):
+            table.add_row(cat, str(count), examples.get(cat, ""))
+        
+        console.print(table)
+    
+    # Search option
+    search = Prompt.ask("\nSearch tool (or Enter to skip)", default="")
+    if search and TOOL_REGISTRY_AVAILABLE:
+        from kali_gpt.tool_registry import TOOLS
+        matches = [t for name, t in TOOLS.items() if search.lower() in name.lower() or search.lower() in t.description.lower()]
+        
+        if matches:
+            console.print(f"\n[bold]Found {len(matches)} tool(s):[/bold]\n")
+            for t in matches[:10]:
+                console.print(f"  [cyan]{t.name}[/cyan] - {t.description}")
+                console.print(f"    [dim]{t.cmd}[/dim]")
+        else:
+            console.print("[yellow]No matches found[/yellow]")
+    
+    Prompt.ask("\nPress Enter to continue")
+
+
+# ============================================================================
+# MAIN ENTRY POINT
+# ============================================================================
+
 if __name__ == "__main__":
+    asyncio.run(main())
+if __name__ == '__main__':
     asyncio.run(main())
