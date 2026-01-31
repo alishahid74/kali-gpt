@@ -78,14 +78,14 @@ except ImportError:
 
 # Try to import v4 agents
 try:
-    from kali_gpt.agents_v4 import MultiAgentPentest as MultiAgentV4
+    from kali_gpt.agents.agents_v4 import MultiAgentPentest as MultiAgentV4
     AGENTS_V4_AVAILABLE = True
 except ImportError:
     AGENTS_V4_AVAILABLE = False
 
 # Try to import tool registry
 try:
-    from kali_gpt.tool_registry import TOOLS, count as tool_count, stats as tool_stats
+    from kali_gpt.tools.tool_registry import TOOLS, count as tool_count, stats as tool_stats
     TOOL_REGISTRY_AVAILABLE = True
 except ImportError:
     TOOL_REGISTRY_AVAILABLE = False
@@ -94,14 +94,14 @@ except ImportError:
 
 # Try to import browser agent
 try:
-    from kali_gpt.browser_agent import BrowserAgent, display_browser_result
+    from kali_gpt.tools.browser_agent import BrowserAgent, display_browser_result
     BROWSER_AVAILABLE = True
 except ImportError:
     BROWSER_AVAILABLE = False
 
 # Try to import MCP server
 try:
-    from kali_gpt.mcp_server import KALI_TOOLS, execute_tool
+    from kali_gpt.tools.mcp_server import KALI_TOOLS, execute_tool
     MCP_AVAILABLE = True
 except ImportError:
     MCP_AVAILABLE = False
@@ -2274,7 +2274,7 @@ def show_tool_info():
     # Search option
     search = Prompt.ask("\nSearch tool (or Enter to skip)", default="")
     if search and TOOL_REGISTRY_AVAILABLE:
-        from kali_gpt.tool_registry import TOOLS
+        from kali_gpt.tools.tool_registry import TOOLS
         matches = [t for name, t in TOOLS.items() if search.lower() in name.lower() or search.lower() in t.description.lower()]
         
         if matches:
