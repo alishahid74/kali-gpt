@@ -11,7 +11,7 @@ Kali-GPT v4.1 - Ultimate AI Penetration Testing Framework
 - Auto-Exploitation Engine
 
 🚀 FEATURES FROM v4.0:
-- 220+ Security Tools (vs HexStrike's 150+)
+- 220+ Security Tools
 - 12 Specialized AI Agents
 - Cloud Security Module (AWS/Azure/GCP/K8s)
 - Binary Analysis & CTF Toolkit
