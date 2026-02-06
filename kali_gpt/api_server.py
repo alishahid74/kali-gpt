@@ -398,7 +398,7 @@ class Database:
                 affected_ports TEXT DEFAULT '[]',
                 evidence TEXT,
                 remediation TEXT,
-                references TEXT DEFAULT '[]',
+                reference_urls TEXT DEFAULT '[]',
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 confirmed_by TEXT,
@@ -723,7 +723,7 @@ class Database:
             INSERT INTO findings (
                 id, scan_id, target_id, title, description, severity,
                 category, cvss_score, cve_ids, affected_hosts, affected_ports,
-                evidence, remediation, references
+                evidence, remediation, reference_urls
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (
             finding_id,
@@ -761,7 +761,7 @@ class Database:
                 'cve_ids': json.loads(row['cve_ids']),
                 'affected_hosts': json.loads(row['affected_hosts']),
                 'affected_ports': json.loads(row['affected_ports']),
-                'references': json.loads(row['references'])
+                'references': json.loads(row['reference_urls'])
             }
         return None
     
@@ -804,7 +804,7 @@ class Database:
             'cve_ids': json.loads(row['cve_ids']),
             'affected_hosts': json.loads(row['affected_hosts']),
             'affected_ports': json.loads(row['affected_ports']),
-            'references': json.loads(row['references'])
+            'references': json.loads(row['reference_urls'])
         } for row in rows]
     
     def update_finding(self, finding_id: str, updates: Dict) -> bool:
@@ -818,6 +818,9 @@ class Database:
         for key, value in updates.items():
             if key in ['cve_ids', 'affected_hosts', 'affected_ports', 'references']:
                 value = json.dumps(value)
+                # Map 'references' to database column 'reference_urls'
+                if key == 'references':
+                    key = 'reference_urls'
             set_clauses.append(f"{key} = ?")
             values.append(value)
         
