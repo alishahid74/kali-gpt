@@ -135,7 +135,7 @@ except ImportError:
 try:
     from kali_gpt.api_server import app as api_app
     API_AVAILABLE = True
-except ImportError:
+except Exception:
     API_AVAILABLE = False
 
 # Try to import MCP server
