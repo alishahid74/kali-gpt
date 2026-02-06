@@ -1,8 +1,16 @@
 #!/usr/bin/env python3
 """
-Kali-GPT v4.0 - Ultimate AI Penetration Testing Framework
+Kali-GPT v4.1 - Ultimate AI Penetration Testing Framework
 
-🚀 NEW IN v4.0:
+🚀 NEW IN v4.1:
+- Command Sanitizer (fixes AI command parsing bug)
+- REST API Server with WebSocket support
+- Bug Bounty Hunter module
+- Enhanced Report Generator
+- Persistent Memory across sessions
+- Auto-Exploitation Engine
+
+🚀 FEATURES FROM v4.0:
 - 220+ Security Tools (vs HexStrike's 150+)
 - 12 Specialized AI Agents
 - Cloud Security Module (AWS/Azure/GCP/K8s)
@@ -98,6 +106,37 @@ try:
     BROWSER_AVAILABLE = True
 except ImportError:
     BROWSER_AVAILABLE = False
+
+# v4.1 Feature Imports
+try:
+    from kali_gpt.report_generator import ReportGenerator, report_menu
+    REPORTS_AVAILABLE = True
+except ImportError:
+    REPORTS_AVAILABLE = False
+
+try:
+    from kali_gpt.persistent_memory import MemoryManager, memory_menu
+    MEMORY_AVAILABLE = True
+except ImportError:
+    MEMORY_AVAILABLE = False
+
+try:
+    from kali_gpt.exploit_engine import ExploitEngine, exploit_menu
+    EXPLOIT_AVAILABLE = True
+except ImportError:
+    EXPLOIT_AVAILABLE = False
+
+try:
+    from kali_gpt.bug_bounty_menu import bug_bounty_menu
+    BUGBOUNTY_AVAILABLE = True
+except ImportError:
+    BUGBOUNTY_AVAILABLE = False
+
+try:
+    from kali_gpt.api_server import app as api_app
+    API_AVAILABLE = True
+except ImportError:
+    API_AVAILABLE = False
 
 # Try to import MCP server
 try:
@@ -447,6 +486,94 @@ def is_uncensored(model_name):
     return any(u in model_name.lower() for u in UNCENSORED_MODELS)
 
 
+def sanitize_command(cmd: str, target: str = None) -> str:
+    """
+    Remove natural language descriptions from command strings.
+    Fixes bug: 'nmap -sS 10.10.10.5 Do a full penetration test' -> 'nmap -sS 10.10.10.5'
+    """
+    if not cmd:
+        return ""
+    
+    cmd = cmd.strip().strip('`"\'')
+    
+    # Words that indicate start of description (not part of command)
+    stop_words = {'do', 'this', 'will', 'should', 'run', 'execute', 'perform',
+                  'scan', 'test', 'check', 'find', 'the', 'to', 'for', 'which',
+                  'full', 'complete', 'comprehensive', 'penetration', 'pentest',
+                  'vulnerability', 'security', 'that', 'it', 'we', 'i', 'please',
+                  'conduct', 'assessment', 'audit', 'review', 'analyze'}
+    
+    words = cmd.split()
+    if not words:
+        return ""
+    
+    # First word must be a known tool
+    first_word = words[0].lower()
+    if first_word not in VALID_TOOLS:
+        return cmd  # Return as-is, let validation handle it
+    
+    clean_parts = [words[0]]
+    skip_next = False
+    
+    for i, word in enumerate(words[1:], 1):
+        if skip_next:
+            clean_parts.append(word)
+            skip_next = False
+            continue
+        
+        # Flags are always included
+        if word.startswith('-'):
+            clean_parts.append(word)
+            # Flags that take values
+            if word in ['-p', '-o', '-oN', '-oX', '-oG', '-oA', '-u', '-U',
+                       '-l', '-L', '-w', '-W', '-t', '-T', '-d', '-e', '-f', '-h',
+                       '-H', '--header', '--data', '--url', '--wordlist',
+                       '--threads', '--timeout', '--script', '--host',
+                       '--user', '--pass', '--output', '--ports', '-sV', '-sC',
+                       '-sS', '-sT', '-sU', '-A', '-O', '-v', '--top-ports', '-n']:
+                skip_next = True
+            continue
+        
+        # IP addresses
+        if re.match(r'^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}', word):
+            clean_parts.append(word)
+            continue
+        
+        # URLs
+        if re.match(r'^https?://', word):
+            clean_parts.append(word)
+            continue
+        
+        # Domains (basic check)
+        if re.match(r'^[a-zA-Z0-9][-a-zA-Z0-9]*\.[a-zA-Z]{2,}', word):
+            clean_parts.append(word)
+            continue
+        
+        # Port numbers/ranges
+        if re.match(r'^\d+(-\d+)?(,\d+(-\d+)?)*$', word):
+            clean_parts.append(word)
+            continue
+        
+        # File paths
+        if word.startswith('/') or word.startswith('./'):
+            clean_parts.append(word)
+            continue
+        
+        # Stop at description words
+        word_lower = word.lower().rstrip('.,;:!?')
+        if word_lower in stop_words:
+            break
+        
+        # Stop at capitalized words (likely description start)
+        if word[0].isupper() and i > 1:
+            break
+        
+        # Include other args
+        clean_parts.append(word)
+    
+    return ' '.join(clean_parts)
+
+
 def is_valid_command(action):
     if not action or len(action) < 3:
         return False
@@ -543,7 +670,8 @@ def show_banner():
 ██║  ██╗██║  ██║███████╗██║      ╚██████╔╝██║        ██║   
 ╚═╝  ╚═╝╚═╝  ╚═╝╚══════╝╚═╝       ╚═════╝ ╚═╝        ╚═╝   
 [/bold cyan]
-[bold green]    🤖 KALI-GPT v4.0 - Ultimate AI Pentest Framework[/bold green]
+[bold green]    🤖 KALI-GPT v4.1 - Ultimate AI Pentest Framework[/bold green]
+[cyan]    220+ Tools | 12 Agents | API Server | Bug Bounty | 100% FREE[/cyan]
 [dim]    220+ Tools | 12 Agents | Cloud/CTF/Browser | 100% FREE[/dim]
 """
     console.print(banner)
@@ -572,6 +700,11 @@ def show_menu():
         ("t", "🏆 CTF Mode", "Forensics & stego"),
         ("b", "🌐 Browser", "Web automation"),
         ("i", "📋 Tool Info", "220+ tools list"),
+        ("r", "📄 Reports", "PDF/HTML generation"),
+        ("m", "🧠 Memory", "Persistent sessions"),
+        ("x", "💥 Exploit", "Auto-exploitation"),
+        ("h", "🎯 Bug Bounty", "AI bounty hunter"),
+        ("a", "🔌 API Server", "REST API"),
         ("0", "🚪 Exit", ""),
     ]
     
@@ -658,6 +791,7 @@ async def run_pentest(ai_service, target):
         
         async def execute(self, tool, command=None, **kw):
             cmd = (command or tool).strip().strip('`')
+            cmd = sanitize_command(cmd, self.target)  # Remove natural language
             cmd = add_target_if_missing(cmd, self.target)
             
             if not is_valid_command(cmd):
@@ -768,7 +902,8 @@ Always include {target}!"""
                     thought = line.split(':', 1)[1].strip()
                 
                 elif up.startswith('ACTION:') and 'INPUT' not in up:
-                    potential = line.split(':', 1)[1].strip().strip('`"\'')
+                    raw_potential = line.split(':', 1)[1].strip().strip('`"\'')
+                    potential = sanitize_command(raw_potential, self.target)  # Remove natural language
                     potential = add_target_if_missing(potential, self.target)
                     
                     if is_valid_command(potential) and len(potential.split()) > 1:
@@ -1422,6 +1557,38 @@ async def main():
                 await browser_menu(ai)
             elif c == "i":
                 show_tool_info()
+            elif c == "r":
+                if REPORTS_AVAILABLE:
+                    await report_menu(ai, findings=[], target="")
+                else:
+                    console.print("[yellow]📄 Reports module not found.[/yellow]")
+                    console.print("   Copy report_generator.py to kali_gpt/")
+            elif c == "m":
+                if MEMORY_AVAILABLE:
+                    mem_mgr = MemoryManager()
+                    await memory_menu(mem_mgr)
+                else:
+                    console.print("[yellow]🧠 Memory module not found.[/yellow]")
+                    console.print("   Copy persistent_memory.py to kali_gpt/")
+            elif c == "x":
+                if EXPLOIT_AVAILABLE:
+                    await exploit_menu(ai)
+                else:
+                    console.print("[yellow]💥 Exploit module not found.[/yellow]")
+                    console.print("   Copy exploit_engine.py to kali_gpt/")
+            elif c == "h":
+                if BUGBOUNTY_AVAILABLE:
+                    await bug_bounty_menu(ai)
+                else:
+                    console.print("[yellow]🎯 Bug Bounty module not found.[/yellow]")
+                    console.print("   Copy bug_bounty_hunter.py and bug_bounty_menu.py to kali_gpt/")
+            elif c == "a":
+                console.print("\n[cyan]🔌 API Server[/cyan]")
+                console.print("   Start with: python3 kali_gpt/api_server.py")
+                console.print("   Docs: http://localhost:8000/docs")
+                if Confirm.ask("Start API server now?", default=False):
+                    import subprocess
+                    subprocess.Popen(["python3", "kali_gpt/api_server.py"])
                 
         except KeyboardInterrupt:
             console.print("\n")
