@@ -294,7 +294,7 @@ cd kali-gpt
 chmod +x setup.sh
 ./setup.sh
 
-# If you encounter the error:
+# If you still encounter the error:
 # "bad interpreter: /bin/bash^M"
 # fix Windows line endings and run again
 sed -i 's/\r$//' setup.sh
