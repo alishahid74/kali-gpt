@@ -1,8 +1,8 @@
 # Kali GPT Enhanced - Features Documentation
 
-## Version 2.0 - Future Enhancements Implementation
+## Enhanced Version Features
 
-This document details all the enhanced features implemented in Kali GPT Version 2.0.
+This document details all features available in the Enhanced version (`kali-gpt-enhanced.py`), which uses the modular `kali_gpt/` package architecture.
 
 ---
 
@@ -531,15 +531,20 @@ kali-gpt/
 │       ├── menu.py                # Menu displays
 │       └── colors.py              # Color schemes
 │
-├── kali-gpt.py                    # Original simple version
-├── kali-gpt-advanced.py           # Original advanced version
-├── kali-gpt-enhanced.py           # Enhanced version 2.0
+├── kali-gpt.py                    # Basic version — simple Q&A
+├── kali-gpt-advanced.py           # Advanced version — command execution + profiles
+├── kali-gpt-enhanced.py           # Enhanced version — uses kali_gpt/ package
+├── kali-gpt-autonomous.py         # Autonomous version (v4.1) — ReAct agent
+├── multi_agent.py                 # Multi-agent collaboration
+├── bug_bounty_hunter.py           # Bug bounty workflows
+├── attack_tree.py                 # Attack tree visualization
 ├── requirements.txt               # Python dependencies
 ├── setup.sh                       # Installation script
 ├── .env                           # Environment variables
 ├── README.md                      # Main documentation
 ├── README_ADVANCED.md             # Advanced features guide
 ├── QUICK_START.md                 # Quick reference
+├── MODELS.md                      # Model selection guide
 └── FEATURES.md                    # This file
 
 ~/.kali-gpt/                       # User data directory

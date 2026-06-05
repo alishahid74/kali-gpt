@@ -3,7 +3,7 @@
 
 # 🐉 Kali GPT - AI-Powered Penetration Testing Assistant
 
-**Kali GPT** is a powerful terminal-based AI assistant designed for penetration testers and security professionals. Available in two versions: **Basic** for simple tasks and **Advanced** for professional red team operations with command execution capabilities.
+**Kali GPT** is a powerful terminal-based AI assistant designed for penetration testers and security professionals. Available in four versions — from simple CLI chat to a fully autonomous AI pentesting agent with 220+ tools, MITRE ATT&CK mapping, and browser automation.
 
 ---
 
@@ -239,22 +239,23 @@ python kali-gpt-autonomous.py --provider ollama --model codellama
 | Phase 1 | ✅ Complete | Autonomous Agent + Local LLM |
 | Phase 2 | ✅ Complete | MITRE ATT&CK + Tool Chaining |
 | Phase 3 | ✅ Complete | Report Generation |
-| Phase 4 | 🔄 In Progress | Attack Tree Visualization |
-| Phase 5 | ⏳ Planned | Fine-tuned Security LLM |
-| Phase 6 | ⏳ Planned | Multi-Agent Collaboration |
+| Phase 4 | ✅ Complete | Attack Tree Visualization (`attack_tree.py`) |
+| Phase 5 | ✅ Complete | Multi-Agent Collaboration (`multi_agent.py`) |
+| Phase 6 | ✅ Complete | Bug Bounty Hunter (`bug_bounty_hunter.py`) |
+| Phase 7 | ⏳ Planned | Fine-tuned Security LLM |
 
 ---
 
-## 📦 Three Versions Available
+## 📦 Four Versions Available
 
-### 🔷 Kali GPT (Basic)
+### 🔷 Kali GPT (Basic) — `kali-gpt.py`
 Simple and lightweight AI assistant for:
 - Quick questions about security tools
 - Basic payload generation
 - Tool explanations
 - Learning pentesting basics
 
-### 🔶 Kali GPT Advanced
+### 🔶 Kali GPT Advanced — `kali-gpt-advanced.py`
 Professional-grade assistant with:
 - ⚡ **Command Execution**: Run and analyze Kali tools directly
 - 🎯 **7 Security Profiles**: Specialized modes (Recon, Exploitation, Web, Wireless, etc.)
@@ -266,7 +267,7 @@ Professional-grade assistant with:
 
 ➡️ **[Read Advanced Documentation](README_ADVANCED.md)** for full features
 
-### ⭐ Kali GPT Enhanced v2.0 (NEW - Recommended)
+### ⭐ Kali GPT Enhanced v2.0 — `kali-gpt-enhanced.py`
 Enterprise-grade penetration testing platform with all advanced features PLUS:
 - 🎯 **Metasploit Framework Integration**: Automated exploitation and payload generation
 - 📊 **Custom Tool Profiles**: Create specialized profiles for your workflow
@@ -278,6 +279,21 @@ Enterprise-grade penetration testing platform with all advanced features PLUS:
 - 🌐 **Vulnerability Database Integration**: Real-time CVE, NVD, and ExploitDB lookups
 
 ➡️ **[Read Features Documentation](FEATURES.md)** for complete feature list
+
+### 🚀 Kali GPT Autonomous v4.1 — `kali-gpt-autonomous.py`
+Fully autonomous AI pentesting agent — the most capable version:
+- 🤖 **ReAct Autonomous Agent**: AI that thinks and acts like a human pentester
+- 🧠 **FREE Local LLM (Ollama)**: No API costs, private, offline capable
+- 📚 **MITRE ATT&CK Framework**: 50+ techniques mapped
+- ⛓️ **Intelligent Tool Chaining**: Auto-selects tools based on discoveries
+- 💾 **Persistent Memory**: Learns from past engagements
+- 🛡️ **220+ Security Tools**: Comprehensive tool registry
+- 🌐 **REST API + WebSocket**: Remote control via FastAPI
+- 🔍 **Browser Automation**: Selenium/Playwright for web testing
+- 👥 **12 Specialized AI Agents**: Multi-agent collaboration
+- ☁️ **Cloud Security Module**: AWS/Azure/GCP/K8s scanning
+
+➡️ See [Quick Start v3.0](#-quick-start-v30) above for setup
 
 ---
 
@@ -359,7 +375,7 @@ nano .env
 ### Basic Version
 ```bash
 source venv/bin/activate
-./kali-gpt.py
+python3 kali-gpt.py
 ```
 
 Simple menu-driven interface for:
@@ -370,7 +386,7 @@ Simple menu-driven interface for:
 ### Advanced Version
 ```bash
 source venv/bin/activate
-./kali-gpt-advanced.py
+python3 kali-gpt-advanced.py
 ```
 
 **Main Menu Options:**
@@ -383,6 +399,22 @@ source venv/bin/activate
 7. 🔍 Output Analysis - Analyze tool outputs
 8. 📚 Conversation History - Review past interactions
 9. ⚙️ Settings - Customize behavior
+
+### Enhanced Version
+```bash
+source venv/bin/activate
+python3 kali-gpt-enhanced.py
+```
+
+Adds Metasploit integration, report generation, multi-target management, plugins, team collaboration, and vulnerability database lookups on top of all advanced features.
+
+### Autonomous Version
+```bash
+source venv/bin/activate
+python3 kali-gpt-autonomous.py
+```
+
+Fully autonomous ReAct agent that follows PTES methodology. Can run with free local Ollama models or cloud OpenAI. See [Quick Start v3.0](#-quick-start-v30) above.
 
 ---
 
@@ -398,6 +430,11 @@ source venv/bin/activate
 ## 📖 Documentation
 
 - **[README_ADVANCED.md](README_ADVANCED.md)** - Complete advanced features guide
+- **[FEATURES.md](FEATURES.md)** - Enhanced version feature documentation
+- **[MODELS.md](MODELS.md)** - Model selection and recommendations
+- **[QUICK_START.md](QUICK_START.md)** - Quick start reference card
+- **[SECURITY.md](SECURITY.md)** - Security policy and best practices
+- **[CONTRIBUTING.md](CONTRIBUTING.md)** - Contribution guidelines
 - **[config.example.json](config.example.json)** - Configuration options
 
 ---
@@ -560,4 +597,7 @@ This tool is for **authorized security testing and educational purposes only**. 
 
 - **GitHub**: [https://github.com/alishahid74/kali-gpt](https://github.com/alishahid74/kali-gpt)
 - **OpenAI API**: [https://platform.openai.com/api-keys](https://platform.openai.com/api-keys)
+- **Ollama**: [https://ollama.com](https://ollama.com)
 - **Advanced Docs**: [README_ADVANCED.md](README_ADVANCED.md)
+- **Features Docs**: [FEATURES.md](FEATURES.md)
+- **Models Guide**: [MODELS.md](MODELS.md)

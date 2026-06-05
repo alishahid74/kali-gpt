@@ -188,10 +188,13 @@ AI: [Identifies vulnerabilities, suggests exploitation paths]
 ```
 
 ### Available Models
+
+**OpenAI (cloud, requires API key):**
 - `gpt-4o` - Best performance, most intelligent (recommended)
 - `gpt-4o-mini` - Faster, cost-effective
-- `gpt-4-turbo` - Previous generation, still powerful
 - `gpt-3.5-turbo` - Fastest, basic tasks
+
+**Ollama (local, free):** See [MODELS.md](MODELS.md) for local model options including uncensored models optimized for pentesting.
 
 ---
 
@@ -281,18 +284,21 @@ AI: [Identifies vulnerabilities, suggests exploitation paths]
 ```
 kali-gpt/
 ├── kali-gpt.py              # Basic version
-├── kali-gpt-advanced.py     # Advanced version (main)
+├── kali-gpt-advanced.py     # Advanced version (this guide)
+├── kali-gpt-enhanced.py     # Enhanced version with modular architecture
+├── kali-gpt-autonomous.py   # Autonomous ReAct agent (v4.1)
+├── kali_gpt/                # Modular package (used by enhanced version)
 ├── setup.sh                 # Installation script
 ├── requirements.txt         # Python dependencies
 ├── config.example.json      # Example configuration
 ├── .env                     # API keys (create this)
-├── README.md               # Basic documentation
-└── README_ADVANCED.md      # This file
+├── README.md                # Main documentation
+└── README_ADVANCED.md       # This file
 
-~/.kali-gpt/                # User data directory
-├── config.json             # User configuration
+~/.kali-gpt/                 # User data directory
+├── config.json              # User configuration
 ├── conversation_history.json  # Chat history
-└── interaction_logs.json   # Detailed logs
+└── interaction_logs.json    # Detailed logs
 ```
 
 ---
@@ -372,17 +378,12 @@ pip install -r requirements.txt --force-reinstall
 
 ---
 
-## 🚀 Future Enhancements
+## 🚀 More Capable Versions
 
-Planned features:
-- [ ] Integration with Metasploit Framework
-- [ ] Custom tool profiles
-- [ ] Report generation
-- [ ] Multi-target management
-- [ ] Plugin system
-- [ ] Team collaboration features
-- [ ] Automated vulnerability scanning
-- [ ] Integration with vulnerability databases
+All features listed above are also available in the more capable versions:
+
+- **[Enhanced Version](FEATURES.md)** (`kali-gpt-enhanced.py`) — Adds Metasploit integration, report generation, multi-target management, plugin system, team collaboration, automated vulnerability scanning, and vulnerability database integration.
+- **[Autonomous Version](#)** (`kali-gpt-autonomous.py`) — Fully autonomous ReAct AI agent with 220+ tools, MITRE ATT&CK mapping, persistent memory, REST API, browser automation, and free local LLM support via Ollama.
 
 ---
 

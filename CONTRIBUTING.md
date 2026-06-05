@@ -105,15 +105,15 @@ We especially welcome contributions in:
 - [ ] Custom Modelfile presets for different use cases
 - [ ] Report generation improvements
 - [ ] Additional security profiles
-- [ ] Multi-target management
 - [ ] Web interface
+- [ ] Unit tests and test coverage improvements
 
-### Nice to Have
-- [ ] GUI interface
-- [ ] Team collaboration features
-- [ ] Database integration for findings
-- [ ] Attack tree visualization
-- [ ] Custom tool profiles
+### Already Implemented (in Enhanced/Autonomous versions)
+- ✅ Team collaboration features (`kali_gpt/integrations/collaboration.py`)
+- ✅ Attack tree visualization (`attack_tree.py`)
+- ✅ Multi-target management (`kali_gpt/modules/target_manager.py`)
+- ✅ Database integration for findings (SQLite via `kali_gpt/memory/store.py`)
+- ✅ Custom tool profiles (`kali_gpt/modules/profile_manager.py`)
 
 ## 🔧 Adding New Tools (v3.0)
 

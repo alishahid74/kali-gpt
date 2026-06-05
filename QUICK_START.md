@@ -1,4 +1,4 @@
-# ⚡ Kali GPT Advanced - Quick Start Guide
+# ⚡ Kali GPT - Quick Start Guide
 
 ## 🚀 Installation (2 minutes)
 
@@ -20,7 +20,12 @@ nano .env
 
 ```bash
 source venv/bin/activate
-./kali-gpt-advanced.py
+
+# Choose your version:
+python3 kali-gpt.py              # Basic — simple Q&A
+python3 kali-gpt-advanced.py     # Advanced — command execution + profiles
+python3 kali-gpt-enhanced.py     # Enhanced — Metasploit, reports, plugins
+python3 kali-gpt-autonomous.py   # Autonomous — ReAct agent, 220+ tools (recommended)
 ```
 
 ---
@@ -199,11 +204,40 @@ Change model: Menu → 9 → model → Select
 
 ---
 
+## 🤖 Autonomous Mode (v4.1)
+
+```bash
+# With Ollama (FREE, local)
+ollama pull llama3.2 && ollama serve
+python3 kali-gpt-autonomous.py
+
+# With OpenAI (cloud)
+python3 kali-gpt-autonomous.py --provider openai
+
+# Target a specific IP
+python3 kali-gpt-autonomous.py --target 192.168.1.100
+```
+
+**Autonomous Menu:**
+| Key | Feature |
+|-----|---------|
+| `1` | 🎯 Autonomous Test — AI decides everything |
+| `2` | 👣 Step-by-Step — You confirm each action |
+| `3` | 🔧 Quick Scan — Single nmap scan |
+| `4` | ❓ Ask AI — Security questions |
+| `5` | 🐛 Bug Bounty — Bug bounty workflows |
+| `6` | 🔄 Switch Model — Change LLM provider |
+
+See [MODELS.md](MODELS.md) for model recommendations.
+
+---
+
 ## 📚 Resources
 
 - Full Docs: `README_ADVANCED.md`
+- Features: `FEATURES.md`
+- Models Guide: `MODELS.md`
 - Config Example: `config.example.json`
-- Basic Version: `./kali-gpt.py`
 - Logs: `~/.kali-gpt/interaction_logs.json`
 
 ---
