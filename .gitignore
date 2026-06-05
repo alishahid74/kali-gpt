@@ -94,3 +94,25 @@ temp/
 *.db
 *.sqlite
 *.sqlite3
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# Reports
+reports/
+
+# Environment
+.env
+venv/
+.venv/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
