@@ -24,10 +24,10 @@ cp .env.example .env   # Set OPENAI_API_KEY or OLLAMA_HOST/OLLAMA_MODEL
 
 | Script | Description |
 |---|---|
-| `python kali-gpt.py` | Basic CLI — menu-driven Q&A, payload generation, tool explanations |
-| `python kali-gpt-advanced.py` | Command execution with safety controls, 7 security profiles, workflow builder |
-| `python kali-gpt-enhanced.py` | Modular architecture — Metasploit integration, report generation, multi-target, plugins |
-| `python kali-gpt-autonomous.py` | v4.1 — ReAct autonomous agent, PTES methodology, MITRE ATT&CK, 220+ tools, REST API, browser automation |
+| `python kali-gpt.py` | Basic CLI — menu-driven Q&A, payload generation, tool explanations. Uses OpenAI directly. |
+| `python kali-gpt-advanced.py` | Command execution with safety controls, 7 security profiles, workflow builder. Uses OpenAI directly. |
+| `python kali-gpt-enhanced.py` | Modular architecture — imports from `kali_gpt/` package. Metasploit, reports, multi-target, plugins. |
+| `python kali-gpt-autonomous.py` | v4.1 — Self-contained 93KB script. ReAct autonomous agent, PTES methodology, MITRE ATT&CK, 220+ tools, REST API, browser automation. |
 
 ### Supporting Scripts
 
@@ -36,54 +36,34 @@ cp .env.example .env   # Set OPENAI_API_KEY or OLLAMA_HOST/OLLAMA_MODEL
 - `attack_tree.py` — Attack tree visualization
 - `install-models.sh` — Ollama model installer
 
+### Standalone Root-Level Modules
+
+These are standalone versions of functionality that also exists inside `kali_gpt/`: `api_server.py`, `api_client.py`, `persistent_memory.py`, `dashboard_server.py`, `exploit_engine.py`, `scan_scheduler.py`, `network_mapper.py`, `team_collaboration.py`, `vuln_database.py`, `report_generator.py`. They can be run independently without the full `kali_gpt/` package.
+
 ## Architecture
 
-### `kali_gpt/` Package Structure
+### `kali_gpt/` Package
 
-```
-kali_gpt/
-├── core/config.py          # ConfigManager — loads/saves ~/.kali-gpt/config.json
-├── llm/                    # LLM provider abstraction
-│   ├── base.py             #   BaseLLMProvider (abstract)
-│   ├── factory.py          #   LLMProviderFactory — auto-detects available providers
-│   ├── openai_provider.py  #   OpenAI implementation
-│   └── ollama_provider.py  #   Ollama (local) implementation
-├── agents/                 # Agent implementations
-│   ├── autonomous_agent.py #   ReAct pattern (Observe→Think→Act→Learn)
-│   ├── agents_v4.py        #   v4 multi-agent system (12 specialized agents)
-│   └── enhanced_agent.py   #   Enhanced agent features
-├── modules/                # Core modules
-│   ├── ai_service.py       #   Dual-provider AI service
-│   ├── command_executor.py #   Safe command execution with validation
-│   ├── profile_manager.py  #   Security profiles (Recon, Exploit, Web, etc.)
-│   ├── report_generator.py #   HTML/Markdown/JSON reports
-│   ├── history_manager.py  #   Conversation history
-│   └── target_manager.py   #   Multi-target tracking
-├── integrations/           # External tool integrations
-│   ├── metasploit.py       #   Metasploit RPC
-│   ├── scanner.py          #   Nmap/Nikto scanner manager
-│   ├── vulnerability_db.py #   NVD, CVE, ExploitDB
-│   └── collaboration.py   #   Team collaboration
-├── tools/
-│   ├── tool_registry.py    #   220+ security tool definitions
-│   ├── browser_agent.py    #   Selenium/Playwright automation
-│   └── mcp_server.py       #   MCP server for IDE integration
-├── knowledge/
-│   ├── mitre_attack.py     #   MITRE ATT&CK framework mapping
-│   └── tool_chains.py      #   Intelligent tool chaining
-├── memory/store.py         #   SQLite-backed persistent memory
-├── utils/validators.py     #   CommandValidator — dangerous command detection
-├── api_server.py           #   FastAPI REST server with WebSocket support
-├── plugins/plugin_manager.py  # Dynamic plugin loading from ~/.kali-gpt/plugins
-└── ui/                     #   Rich terminal UI (menu.py, colors.py)
-```
+The modular package used by `kali-gpt-enhanced.py`. Key sub-packages:
+
+- **`llm/`** — LLM provider abstraction. `BaseLLMProvider` defines the interface; `OpenAIProvider` and `OllamaProvider` implement it. `LLMFactory` auto-detects providers with priority order: Ollama (local) → OpenAI (cloud) → Groq (cloud), falling back automatically if preferred provider is unavailable.
+- **`agents/`** — `autonomous_agent.py` (ReAct pattern: Observe→Think→Act→Learn), `agents_v4.py` (12 specialized agents), `enhanced_agent.py`
+- **`modules/`** — Core services: `ai_service.py` (dual-provider), `command_executor.py` (safe execution with validation + 30s timeout), `profile_manager.py` (7 security profiles with specialized system prompts), `report_generator.py` (HTML/Markdown/JSON), `history_manager.py`, `target_manager.py`
+- **`integrations/`** — External tools: Metasploit RPC, Nmap/Nikto scanners, NVD/CVE/ExploitDB, team collaboration
+- **`tools/`** — `tool_registry.py` (220+ security tool definitions), `browser_agent.py` (Selenium/Playwright), `mcp_server.py` (IDE integration)
+- **`knowledge/`** — MITRE ATT&CK framework mapping, intelligent tool chaining
+- **`memory/store.py`** — SQLite-backed persistent memory
+- **`utils/validators.py`** — `CommandValidator` checks for dangerous command patterns; execution requires user confirmation
+- **`plugins/plugin_manager.py`** — Dynamic plugin loading from `~/.kali-gpt/plugins/`
+- **`ui/`** — Rich terminal UI (menu.py, colors.py)
 
 ### Key Patterns
 
-- **LLM Provider Abstraction**: `BaseLLMProvider` → `OpenAIProvider` / `OllamaProvider`, selected via `LLMProviderFactory` with auto-detection and fallback
-- **ReAct Agent Loop**: Autonomous agent cycles through Observe→Think→Act→Learn, following PTES phases (Reconnaissance through Reporting)
-- **Command Safety**: `CommandValidator` in `utils/validators.py` checks for dangerous patterns; execution requires confirmation and has timeout protection (default 30s)
-- **Security Profiles**: 7 built-in profiles (General, Recon, Exploit, Web, Wireless, Post-Exploit, Forensics) each with specialized system prompts and tool sets
+- **LLM Provider Selection**: `LLMFactory.initialize()` takes a `preferred_provider` and `auto_fallback` flag. Provider availability is checked at runtime. Env vars: `OPENAI_API_KEY` for OpenAI, `OLLAMA_HOST`/`OLLAMA_MODEL` for Ollama.
+- **ReAct Agent Loop**: Autonomous agent cycles through Observe→Think→Act→Learn, following PTES phases (Reconnaissance → Scanning → Enumeration → Vulnerability Analysis → Exploitation → Post-Exploitation → Reporting).
+- **Command Safety**: `CommandValidator` blocks dangerous patterns; execution requires confirmation and has timeout protection (default 30s).
+- **Security Profiles**: 7 built-in profiles (General, Recon, Exploit, Web, Wireless, Post-Exploit, Forensics) each with specialized system prompts and tool sets, managed by `ProfileManager`.
+- **Dual architecture**: The basic/advanced scripts (`kali-gpt.py`, `kali-gpt-advanced.py`) use OpenAI directly. The enhanced script imports from the `kali_gpt/` package. The autonomous script (`kali-gpt-autonomous.py`) is a large self-contained file with its own implementations.
 
 ## Configuration
 
@@ -99,6 +79,16 @@ kali_gpt/
 - `fine_tune/pentest_training_data.jsonl` — Training data
 - `Modelfile.pentester` / `Modelfile.redteam` — Custom Ollama model definitions
 
+## Additional Components
+
+- **VSCode Extension**: `vscode-extension/` — Node.js/TypeScript extension for IDE integration
+- **Jupyter Notebook**: `Kali_GPT_Fine_Tuning.ipynb` — Interactive fine-tuning workflow
+- **Examples**: `examples/` — Usage docs and payload examples
+
 ## Dependencies
 
 Python 3.8+ with: openai, rich, pyperclip, python-dotenv, requests (see `requirements.txt`). The autonomous version uses additional optional deps: fastapi, uvicorn, selenium, playwright, msfrpc.
+
+## Testing & CI
+
+No test suite, linting configuration, or CI/CD pipeline exists yet. The `.gitignore` includes pytest patterns for future use.
