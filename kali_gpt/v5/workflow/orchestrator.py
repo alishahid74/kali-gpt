@@ -35,6 +35,10 @@ class PentestConfig:
     output_dir: str = "./reports"
     skip_recon: bool = False
     skip_exploitation: bool = False
+    use_browser: bool = True
+    proxy: Optional[str] = None
+    rate_limit: float = 0.0
+    hf_token: Optional[str] = None
 
     def __post_init__(self):
         if not self.enabled_agents:
@@ -126,8 +130,10 @@ class PentestReport:
 
 
 class Reconnaissance:
-    def __init__(self, llm_provider=None):
+    def __init__(self, llm_provider=None, proxy: Optional[str] = None, rate_limit: float = 0.0):
         self.llm = llm_provider
+        self.proxy = proxy
+        self.rate_limit = rate_limit
 
     async def scan(self, target_url):
         print(f"\n{'='*60}\nPHASE 1: RECONNAISSANCE\nTarget: {target_url}\n{'='*60}\n")
@@ -152,12 +158,14 @@ class Reconnaissance:
         visited, to_visit = set(), [target_url]
         async with aiohttp.ClientSession() as session:
             while to_visit and len(visited) < 100:
+                if self.rate_limit:
+                    await asyncio.sleep(self.rate_limit)
                 url = to_visit.pop(0)
                 if url in visited:
                     continue
                 visited.add(url)
                 try:
-                    async with session.get(url, timeout=aiohttp.ClientTimeout(total=10), ssl=False) as resp:
+                    async with session.get(url, timeout=aiohttp.ClientTimeout(total=10), ssl=False, proxy=self.proxy) as resp:
                         html = await resp.text()
                         if not result.headers:
                             result.headers = dict(resp.headers)
@@ -194,7 +202,7 @@ class Reconnaissance:
         import aiohttp
         try:
             async with aiohttp.ClientSession() as session:
-                async with session.get(target_url, timeout=aiohttp.ClientTimeout(total=10), ssl=False) as resp:
+                async with session.get(target_url, timeout=aiohttp.ClientTimeout(total=10), ssl=False, proxy=self.proxy) as resp:
                     headers = dict(resp.headers)
                     html = await resp.text()
                     for h, tech in {"X-Powered-By": None, "Server": None, "X-AspNet-Version": "ASP.NET"}.items():
@@ -228,10 +236,10 @@ class PentestOrchestrator:
     def __init__(self, config, llm_provider=None):
         self.config = config
         self.llm = llm_provider
-        self.reconnaissance = Reconnaissance(llm_provider)
+        self.reconnaissance = Reconnaissance(llm_provider, proxy=config.proxy, rate_limit=config.rate_limit)
         self.source_analyzer = SourceCodeAnalyzer(llm_provider)
-        self.vuln_hunter = ParallelVulnHunter(llm_provider, config.enabled_agents)
-        self.exploitation_engine = ExploitationEngine(llm_provider)
+        self.vuln_hunter = ParallelVulnHunter(llm_provider, config.enabled_agents, proxy=config.proxy, rate_limit=config.rate_limit)
+        self.exploitation_engine = ExploitationEngine(llm_provider, use_browser=config.use_browser, proxy=config.proxy, rate_limit=config.rate_limit)
 
     async def run(self):
         print(f"\n{'#'*60}\n#  KALI-GPT v5.0 - PENETRATION TEST\n#  Target: {self.config.target_url}\n#  Mode: {self.config.scan_type}\n{'#'*60}\n")
@@ -259,7 +267,10 @@ class PentestOrchestrator:
         validated_exploits, discarded = [], []
         if not self.config.skip_exploitation and all_findings:
             print(f"\n{'='*60}\nPHASE 3: EXPLOITATION (PROOF-BY-EXPLOIT)\n{'='*60}\n")
-            validated_exploits = await self.exploitation_engine.validate_all(all_findings)
+            validated_exploits = await self.exploitation_engine.validate_all(
+                all_findings,
+                max_attempts=self.config.max_exploitation_attempts,
+            )
             discarded = self.exploitation_engine.discarded_findings
 
         # Phase 4
