@@ -19,6 +19,7 @@ import json
 import asyncio
 import subprocess
 import shutil
+import logging
 from datetime import datetime
 from typing import Dict, List, Optional, Tuple, Any, Set
 from dataclasses import dataclass, field, asdict
@@ -35,6 +36,19 @@ from rich.live import Live
 from rich import box
 
 console = Console()
+logger = logging.getLogger(__name__)
+
+
+def _warn(callback, message: str, exc: Exception = None):
+    """Log recoverable scan errors without stopping the full bug bounty run."""
+    if exc:
+        logger.warning("%s: %s", message, exc)
+        detail = f"{message}: {exc}"
+    else:
+        logger.warning(message)
+        detail = message
+    if callback:
+        callback(f"  [yellow]{detail}[/yellow]")
 
 
 # =============================================================================
@@ -312,7 +326,7 @@ class BugBountyHunter:
                 if callback:
                     callback(f"  [timeout] {tool_name}")
             except Exception as e:
-                pass
+                _warn(callback, f"{tool_name} enumeration failed", e)
         
         # Add to assets
         for sub in subdomains:
@@ -349,8 +363,8 @@ class BugBountyHunter:
             try:
                 result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=180)
                 alive = [line.strip() for line in result.stdout.strip().split('\n') if line.strip()]
-            except:
-                pass
+            except Exception as e:
+                _warn(callback, "httpx alive-host check failed", e)
         else:
             # Fallback: check with curl
             for host in hosts[:50]:  # Limit for performance
@@ -412,8 +426,8 @@ class BugBountyHunter:
                 if 'wordpress' in headers:
                     techs.append('WordPress')
                 
-            except:
-                pass
+            except Exception as e:
+                _warn(callback, f"Technology fingerprinting failed for {url}", e)
             
             # Update asset
             for asset in self.assets:
@@ -442,8 +456,8 @@ class BugBountyHunter:
                     for line in result.stdout.strip().split('\n'):
                         if line.strip():
                             endpoints.add(line.strip())
-                except:
-                    pass
+                except Exception as e:
+                    _warn(callback, f"waybackurls discovery failed for {url}", e)
             
             # Method 2: GAU (Get All URLs)
             if shutil.which('gau'):
@@ -456,8 +470,8 @@ class BugBountyHunter:
                     for line in result.stdout.strip().split('\n'):
                         if line.strip():
                             endpoints.add(line.strip())
-                except:
-                    pass
+                except Exception as e:
+                    _warn(callback, f"gau discovery failed for {url}", e)
             
             # Method 3: Common paths
             common_paths = [
@@ -834,8 +848,8 @@ class BugBountyHunter:
                         if callback:
                             callback(f"  [red]⚠️ FOUND: XSS vulnerability[/red]")
                             
-            except:
-                pass
+            except Exception as e:
+                _warn(callback, "dalfox XSS scan failed", e)
         
         if callback:
             callback(f"  Tested {len(testable)} endpoints")
@@ -996,7 +1010,7 @@ class BugBountyHunter:
             if callback:
                 callback("  Nuclei scan timed out")
         except Exception as e:
-            pass
+            _warn(callback, "Nuclei scan failed", e)
         
         if callback:
             callback(f"  Scanned {len(hosts)} hosts")
@@ -1096,7 +1110,8 @@ Respond in JSON format:
                     if 'cvss' in data:
                         finding.cvss = float(data['cvss'])
                         
-            except:
+            except Exception as e:
+                logger.warning("AI analysis failed for finding %s: %s", finding.id, e)
                 continue
         
         # Sort by severity and confidence, deprioritize high duplicate risk
