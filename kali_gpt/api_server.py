@@ -36,6 +36,7 @@ from dataclasses import dataclass, field, asdict
 import sqlite3
 import uuid
 import re
+import html
 
 # FastAPI imports
 try:
@@ -846,6 +847,40 @@ class Database:
         conn.commit()
         conn.close()
         return success
+
+    # ----- Report Operations -----
+
+    def create_report_record(self, report_id: str, report: ReportCreate, status: str, file_path: str = None, file_size: int = None) -> None:
+        """Persist generated report metadata"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute('''
+            INSERT INTO reports (id, target_id, scan_ids, format, status, file_path, file_size)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        ''', (
+            report_id,
+            report.target_id,
+            json.dumps(report.scan_ids),
+            report.format,
+            status,
+            file_path,
+            file_size,
+        ))
+        conn.commit()
+        conn.close()
+
+    def get_report(self, report_id: str) -> Optional[Dict]:
+        """Get report metadata by ID"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute('SELECT * FROM reports WHERE id = ?', (report_id,))
+        row = cursor.fetchone()
+        conn.close()
+        if not row:
+            return None
+        data = dict(row)
+        data['scan_ids'] = json.loads(data.get('scan_ids') or '[]')
+        return data
     
     # ----- API Key Operations -----
     
@@ -1422,16 +1457,23 @@ async def health_check():
     try:
         db.get_stats()
         db_status = "ok"
-    except:
+    except Exception:
         db_status = "error"
     
-    # Check AI service (placeholder)
-    ai_status = "ok"  # TODO: Actually check
+    ai_status = "unconfigured"
+    if os.getenv("OPENAI_API_KEY"):
+        ai_status = "configured"
+    elif shutil.which("ollama"):
+        try:
+            proc = subprocess.run(["ollama", "list"], capture_output=True, text=True, timeout=5)
+            ai_status = "ok" if proc.returncode == 0 else "error"
+        except Exception:
+            ai_status = "error"
     
     # System load
     try:
         load = os.getloadavg()[0]
-    except:
+    except Exception:
         load = 0.0
     
     return HealthResponse(
@@ -1477,8 +1519,8 @@ async def list_tools():
             try:
                 proc = subprocess.run([name, '--version'], capture_output=True, text=True, timeout=5)
                 version = proc.stdout.split('\n')[0][:50]
-            except:
-                pass
+            except Exception:
+                version = "unknown"
         
         result.append(ToolInfo(
             name=name,
@@ -1709,6 +1751,147 @@ async def delete_finding(
 
 # ----- Reports -----
 
+def _collect_report_data(report: ReportCreate) -> Dict[str, Any]:
+    """Collect target, scans, and findings for a report request."""
+    target = db.get_target(report.target_id) if report.target_id else None
+    scans = []
+    for scan_id in report.scan_ids:
+        scan = db.get_scan(scan_id)
+        if not scan:
+            raise HTTPException(status_code=404, detail=f"Scan not found: {scan_id}")
+        scans.append(scan)
+
+    if not target and scans:
+        target = db.get_target(scans[0]['target_id'])
+    if report.target_id and not target:
+        raise HTTPException(status_code=404, detail="Target not found")
+
+    findings = []
+    if report.scan_ids:
+        for scan_id in report.scan_ids:
+            findings.extend(db.list_findings(scan_id=scan_id, limit=1000))
+    elif report.target_id:
+        findings = db.list_findings(target_id=report.target_id, limit=1000)
+    else:
+        findings = db.list_findings(limit=1000)
+
+    return {"target": target, "scans": scans, "findings": findings}
+
+
+def _render_report_markdown(data: Dict[str, Any], report: ReportCreate) -> str:
+    target = data.get("target") or {}
+    findings = data["findings"]
+    severity_counts = {sev.value: 0 for sev in Severity}
+    for finding in findings:
+        severity_counts[finding.get("severity", "info")] = severity_counts.get(finding.get("severity", "info"), 0) + 1
+
+    lines = [
+        "# Kali-GPT Security Report",
+        "",
+        "## Executive Summary",
+        "",
+        f"- Target: {target.get('name') or target.get('host') or 'Multiple targets'}",
+        f"- Generated: {datetime.now().isoformat(timespec='seconds')}",
+        f"- Scans included: {len(data['scans'])}",
+        f"- Findings: {len(findings)}",
+        "",
+        "## Severity Breakdown",
+        "",
+        "| Severity | Count |",
+        "|---|---:|",
+    ]
+    for severity in ["critical", "high", "medium", "low", "info"]:
+        lines.append(f"| {severity.title()} | {severity_counts.get(severity, 0)} |")
+
+    lines.extend(["", "## Findings", ""])
+    if not findings:
+        lines.append("No findings were recorded for this report scope.")
+    for index, finding in enumerate(findings, 1):
+        lines.extend([
+            f"### {index}. {finding['title']}",
+            "",
+            f"- Severity: {finding['severity']}",
+            f"- Status: {finding.get('status', 'new')}",
+            f"- Category: {finding.get('category', 'general')}",
+            f"- CVSS: {finding.get('cvss_score') or 'N/A'}",
+            "",
+            finding.get("description") or "",
+        ])
+        if report.include_evidence and finding.get("evidence"):
+            lines.extend(["", "**Evidence**", "", "```", finding["evidence"], "```"])
+        if report.include_remediation and finding.get("remediation"):
+            lines.extend(["", f"**Remediation:** {finding['remediation']}"])
+        lines.append("")
+
+    return "\n".join(lines)
+
+
+def _render_report_html(markdown_text: str) -> str:
+    body = []
+    in_list = False
+    in_code = False
+    for raw in markdown_text.splitlines():
+        line = raw.rstrip()
+        if line == "```":
+            if in_code:
+                body.append("</code></pre>")
+            else:
+                body.append("<pre><code>")
+            in_code = not in_code
+            continue
+        if in_code:
+            body.append(html.escape(line) + "\n")
+            continue
+        if line.startswith("# "):
+            body.append(f"<h1>{html.escape(line[2:])}</h1>")
+        elif line.startswith("## "):
+            body.append(f"<h2>{html.escape(line[3:])}</h2>")
+        elif line.startswith("### "):
+            body.append(f"<h3>{html.escape(line[4:])}</h3>")
+        elif line.startswith("- "):
+            if not in_list:
+                body.append("<ul>")
+                in_list = True
+            body.append(f"<li>{html.escape(line[2:])}</li>")
+        else:
+            if in_list:
+                body.append("</ul>")
+                in_list = False
+            if line.startswith("|"):
+                body.append(f"<p><code>{html.escape(line)}</code></p>")
+            elif line:
+                body.append(f"<p>{html.escape(line)}</p>")
+    if in_list:
+        body.append("</ul>")
+    return f"""<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Kali-GPT Security Report</title>
+  <style>
+    body {{ font-family: Arial, sans-serif; line-height: 1.5; max-width: 960px; margin: 40px auto; color: #1f2937; }}
+    h1, h2, h3 {{ color: #111827; }}
+    pre {{ background: #111827; color: #f9fafb; padding: 16px; overflow: auto; }}
+    code {{ background: #f3f4f6; padding: 2px 4px; }}
+  </style>
+</head>
+<body>
+{''.join(body)}
+</body>
+</html>"""
+
+
+def _write_report_file(report_id: str, report: ReportCreate, data: Dict[str, Any]) -> Path:
+    ext = {"markdown": "md", "html": "html", "json": "json"}[report.format]
+    output_path = Config.REPORTS_DIR / f"report_{report_id}.{ext}"
+    if report.format == "json":
+        output_path.write_text(json.dumps(data, default=str, indent=2), encoding="utf-8")
+    else:
+        markdown_text = _render_report_markdown(data, report)
+        content = _render_report_html(markdown_text) if report.format == "html" else markdown_text
+        output_path.write_text(content, encoding="utf-8")
+    return output_path
+
 @app.post("/reports", response_model=ReportResponse, tags=["Reports"])
 async def generate_report(
     report: ReportCreate,
@@ -1716,20 +1899,24 @@ async def generate_report(
     api_key: Dict = Depends(require_permission("write"))
 ):
     """Generate a report"""
-    # TODO: Implement report generation
-    # For now, return placeholder
+    if report.format == "pdf":
+        raise HTTPException(status_code=501, detail="PDF export requires an HTML-to-PDF backend; use html, markdown, or json")
+
     report_id = str(uuid.uuid4())
+    data = _collect_report_data(report)
+    path = _write_report_file(report_id, report, data)
+    db.create_report_record(report_id, report, "completed", str(path), path.stat().st_size)
     
     return ReportResponse(
         id=report_id,
         target_id=report.target_id,
         scan_ids=report.scan_ids,
         format=report.format,
-        status="pending",
-        file_path=None,
-        file_size=None,
+        status="completed",
+        file_path=str(path),
+        file_size=path.stat().st_size,
         created_at=datetime.now(),
-        download_url=None
+        download_url=f"/reports/{report_id}/download"
     )
 
 
@@ -1739,8 +1926,19 @@ async def download_report(
     api_key: Dict = Depends(get_api_key)
 ):
     """Download a generated report"""
-    # TODO: Implement
-    raise HTTPException(status_code=501, detail="Not implemented yet")
+    report = db.get_report(report_id)
+    if not report:
+        raise HTTPException(status_code=404, detail="Report not found")
+    path = Path(report.get("file_path") or "")
+    if not path.exists() or not path.is_file():
+        raise HTTPException(status_code=404, detail="Report file not found")
+    media_type = {
+        "html": "text/html",
+        "markdown": "text/markdown",
+        "json": "application/json",
+        "pdf": "application/pdf",
+    }.get(report.get("format"), "application/octet-stream")
+    return FileResponse(path, media_type=media_type, filename=path.name)
 
 
 # ----- API Keys -----
@@ -1818,7 +2016,7 @@ async def scan_websocket(websocket: WebSocket, scan_id: str):
                 await websocket.send_json({'type': 'heartbeat'})
     
     except WebSocketDisconnect:
-        pass
+        scan_engine.websocket_connections.get(scan_id, [])
     finally:
         # Remove connection
         if scan_id in scan_engine.websocket_connections:
