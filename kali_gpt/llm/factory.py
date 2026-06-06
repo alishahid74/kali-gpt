@@ -1,10 +1,7 @@
 """
 LLM Factory - Automatic Provider Selection
 
-Automatically selects the best available LLM provider:
-1. Ollama (local) - preferred for privacy/cost
-2. OpenAI (cloud) - fallback if local unavailable
-3. Groq (cloud) - fast inference, free tier
+Supports: AirLLM (70B on 4GB), Ollama (local), OpenAI (cloud), Groq (cloud)
 """
 
 import asyncio
@@ -20,6 +17,13 @@ from .base import (
 )
 from .ollama_provider import OllamaProvider
 from .openai_provider import OpenAIProvider
+
+try:
+    from .airllm_provider import AirLLMProvider, AirLLMConfig, RECOMMENDED_MODELS
+    AIRLLM_AVAILABLE = True
+except ImportError:
+    AIRLLM_AVAILABLE = False
+    AirLLMProvider = None
 
 
 class LLMFactory:
