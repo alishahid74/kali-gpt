@@ -43,6 +43,7 @@ import asyncio
 import argparse
 import os
 import subprocess
+import shlex
 import shutil
 import httpx
 import re
@@ -146,6 +147,16 @@ except ImportError:
     MCP_AVAILABLE = False
 
 console = Console()
+
+# SECURITY (CWE-78): reject values containing shell metacharacters before they
+# are interpolated into any shell command string in this module.
+_SHELL_METACHARS = set(';|&`$()<>\n\r\\"\'')
+
+
+def shell_safe(value: str) -> bool:
+    """True if the value has no shell metacharacters (safe to interpolate)."""
+    return bool(value) and not any(c in _SHELL_METACHARS for c in value)
+
 
 # ============================================================================
 # ATTACK TREE (Phase 4)
@@ -812,11 +823,21 @@ async def run_pentest(ai_service, target):
             
             self.ran.add(cmd)
             console.print(f"[cyan]$ {cmd}[/cyan]")
-            
+
             timeout = get_timeout(tool_name)
-            
+
             try:
-                r = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=timeout)
+                # SECURITY (CWE-78): cmd is produced by the LLM agent and could be
+                # steered via indirect prompt injection. Run it as an argv list with
+                # shell=False so shell operators (; | & ` $()) in the model output
+                # are treated as literal arguments and cannot chain a second command.
+                try:
+                    argv = shlex.split(cmd)
+                except ValueError as e:
+                    return {"success": False, "output": "", "error": f"parse error: {e}", "findings": []}
+                if not argv:
+                    return {"success": False, "output": "", "error": "Empty command", "findings": []}
+                r = subprocess.run(argv, shell=False, capture_output=True, text=True, timeout=timeout)
                 out = r.stdout + r.stderr
                 ok = r.returncode == 0 or len(out.strip()) > 10
                 
@@ -1825,6 +1846,9 @@ async def docker_security_scan(ai):
     # Run trivy if available
     if shutil.which("trivy"):
         image = Prompt.ask("\nScan image with Trivy (or Enter to skip)", default="")
+        if image and not shell_safe(image):
+            console.print("[red]✗ Rejected image name with unsafe characters[/red]")
+            image = ""
         if image:
             console.print(f"\n[cyan]Scanning {image}...[/cyan]")
             subprocess.run(f"trivy image {image} --severity HIGH,CRITICAL 2>&1 | head -50", shell=True)
@@ -1866,9 +1890,9 @@ async def secret_scanner(ai):
     console.print("\n[bold red]🔐 Secret Scanner[/bold red]\n")
     
     path = Prompt.ask("Path to scan", default=".")
-    
-    if not os.path.exists(path):
-        console.print("[red]Path not found[/red]")
+
+    if not shell_safe(path) or not os.path.exists(path):
+        console.print("[red]Path not found or contains unsafe characters[/red]")
         return
     
     console.print(f"\n[cyan]Scanning {path} for secrets...[/cyan]\n")
@@ -1957,8 +1981,8 @@ async def analyze_file_ctf(ai):
     console.print("\n[bold cyan]🔍 File Analysis[/bold cyan]\n")
     
     filepath = Prompt.ask("File path")
-    if not filepath or not os.path.exists(filepath):
-        console.print("[red]File not found[/red]")
+    if not filepath or not shell_safe(filepath) or not os.path.exists(filepath):
+        console.print("[red]File not found or contains unsafe characters[/red]")
         return
     
     console.print(f"\n[cyan]Analyzing {filepath}...[/cyan]\n")
@@ -2005,8 +2029,8 @@ async def stego_menu(ai):
     console.print("\n[bold magenta]🖼️  Steganography Tools[/bold magenta]\n")
     
     filepath = Prompt.ask("Image file path")
-    if not filepath or not os.path.exists(filepath):
-        console.print("[red]File not found[/red]")
+    if not filepath or not shell_safe(filepath) or not os.path.exists(filepath):
+        console.print("[red]File not found or contains unsafe characters[/red]")
         return
     
     console.print(f"\n[cyan]Running stego tools on {filepath}...[/cyan]\n")
@@ -2020,10 +2044,12 @@ async def stego_menu(ai):
     if filepath.lower().endswith(('.jpg', '.jpeg')) and shutil.which("steghide"):
         console.print("\n[bold]steghide:[/bold]")
         password = Prompt.ask("Password (empty for none)", default="")
-        if password:
-            subprocess.run(f"steghide extract -sf '{filepath}' -p '{password}' 2>&1", shell=True)
+        if password and not shell_safe(password):
+            console.print("[red]✗ Rejected password with unsafe characters[/red]")
+        elif password:
+            subprocess.run(["steghide", "extract", "-sf", filepath, "-p", password], shell=False)
         else:
-            subprocess.run(f"steghide info '{filepath}' 2>&1", shell=True)
+            subprocess.run(["steghide", "info", filepath], shell=False)
     
     # strings
     console.print("\n[bold]Hidden strings:[/bold]")
@@ -2058,17 +2084,18 @@ async def hash_crack_menu(ai):
         if not os.path.exists(wordlist):
             wordlist = Prompt.ask("Wordlist path", default="")
         
-        if wordlist and os.path.exists(wordlist):
+        if wordlist and shell_safe(wordlist) and os.path.exists(wordlist):
             # Write hash to temp file
             import tempfile
             with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as f:
                 f.write(hash_value)
                 hash_file = f.name
-            
+
             if shutil.which("john"):
                 console.print("\n[cyan]Running John the Ripper...[/cyan]")
-                subprocess.run(f"john --wordlist={wordlist} {hash_file} 2>&1 | head -20", shell=True)
-                subprocess.run(f"john --show {hash_file} 2>&1", shell=True)
+                # argv (shell=False): wordlist/hash_file are separate arguments
+                subprocess.run(["john", f"--wordlist={wordlist}", hash_file], shell=False)
+                subprocess.run(["john", "--show", hash_file], shell=False)
             
             os.unlink(hash_file)
     
@@ -2086,8 +2113,8 @@ async def memory_forensics(ai):
         return
     
     dump_path = Prompt.ask("Memory dump path")
-    if not dump_path or not os.path.exists(dump_path):
-        console.print("[red]File not found[/red]")
+    if not dump_path or not shell_safe(dump_path) or not os.path.exists(dump_path):
+        console.print("[red]File not found or contains unsafe characters[/red]")
         return
     
     vol_cmd = "vol" if shutil.which("vol") else "volatility"
@@ -2114,8 +2141,8 @@ async def binary_analysis_menu(ai):
     console.print("\n[bold yellow]🔬 Binary Analysis[/bold yellow]\n")
     
     filepath = Prompt.ask("Binary file path")
-    if not filepath or not os.path.exists(filepath):
-        console.print("[red]File not found[/red]")
+    if not filepath or not shell_safe(filepath) or not os.path.exists(filepath):
+        console.print("[red]File not found or contains unsafe characters[/red]")
         return
     
     console.print(f"\n[cyan]Analyzing {filepath}...[/cyan]\n")
@@ -2264,6 +2291,9 @@ async def browser_analyze_url(ai):
     url = Prompt.ask("URL to analyze")
     if not url:
         return
+    if not shell_safe(url):
+        console.print("[red]✗ Rejected URL with unsafe characters[/red]")
+        return
     
     if not url.startswith(('http://', 'https://')):
         url = f"https://{url}"
@@ -2290,6 +2320,9 @@ async def browser_screenshot(ai):
     """Take screenshot of URL"""
     url = Prompt.ask("URL")
     if not url:
+        return
+    if not shell_safe(url):
+        console.print("[red]✗ Rejected URL with unsafe characters[/red]")
         return
     
     if not url.startswith(('http://', 'https://')):
@@ -2322,6 +2355,9 @@ async def check_security_headers(ai):
     """Check security headers"""
     url = Prompt.ask("URL")
     if not url:
+        return
+    if not shell_safe(url):
+        console.print("[red]✗ Rejected URL with unsafe characters[/red]")
         return
     
     if not url.startswith(('http://', 'https://')):
@@ -2365,6 +2401,9 @@ async def detect_forms(ai):
     """Detect forms on a page"""
     url = Prompt.ask("URL")
     if not url:
+        return
+    if not shell_safe(url):
+        console.print("[red]✗ Rejected URL with unsafe characters[/red]")
         return
     
     if not url.startswith(('http://', 'https://')):

@@ -236,6 +236,24 @@ def test_metasploit_payload_rejects_bad_values():
 
 
 # ---------------------------------------------------------------------------
+# exploit_engine.py: substituted values can't carry shell metacharacters
+# ---------------------------------------------------------------------------
+
+def test_exploit_engine_rejects_metachars():
+    from kali_gpt import exploit_engine as ee
+
+    for payload in INJECTION_PAYLOADS:
+        try:
+            ee._reject_shell_metachars(payload, "target")
+        except ee.InputValidationError:
+            continue
+        raise AssertionError(f"_reject_shell_metachars accepted: {payload!r}")
+
+    # a clean value passes through unchanged
+    assert ee._reject_shell_metachars("192.168.1.10", "target") == "192.168.1.10"
+
+
+# ---------------------------------------------------------------------------
 # Minimal standalone runner (no pytest needed)
 # ---------------------------------------------------------------------------
 

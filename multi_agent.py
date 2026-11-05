@@ -5,6 +5,9 @@ Provides menu and entry points for the 12-agent collaborative system.
 """
 
 import asyncio
+import shlex
+import shutil
+import subprocess
 from datetime import datetime
 from typing import Dict, List, Optional
 
@@ -16,6 +19,42 @@ from rich.progress import Progress, SpinnerColumn, TextColumn
 from rich import box
 
 console = Console()
+
+# SECURITY (CWE-78): shell metacharacters that must not appear in a value that
+# gets interpolated into a shell command built elsewhere in this module.
+_SHELL_METACHARS = set(';|&`$()<>\n\r\\"\'')
+
+
+def _is_shell_safe(value: str) -> bool:
+    """True if the value contains no shell metacharacters."""
+    return bool(value) and not any(c in _SHELL_METACHARS for c in value)
+
+
+def _run_ai_command(cmd: str, timeout: int = 180):
+    """
+    Run an AI-generated command safely.
+
+    SECURITY: The command string comes from the LLM and could be steered by
+    indirect prompt injection. It is split into an argv list and executed with
+    shell=False, so shell operators in the model output cannot chain commands.
+    Returns combined stdout+stderr (truncated), or an error string.
+    """
+    try:
+        argv = shlex.split(cmd)
+    except ValueError as e:
+        return f"Could not parse command: {e}"
+    if not argv:
+        return "Empty command"
+    if not shutil.which(argv[0]):
+        return f"{argv[0]} not installed"
+    try:
+        result = subprocess.run(argv, shell=False, capture_output=True,
+                                text=True, timeout=timeout)
+        return result.stdout + result.stderr
+    except subprocess.TimeoutExpired:
+        return "Command timed out"
+    except Exception as e:
+        return f"Error: {e}"
 
 
 async def multi_agent_v4_menu(ai_service, attack_tree=None):
@@ -209,12 +248,18 @@ async def run_ctf_mode(ai_service):
     )
     
     filepath = Prompt.ask("File path (or Enter to skip)")
-    
+
+    # SECURITY: reject paths containing shell metacharacters before they are
+    # interpolated into the shell pipelines below (CWE-78).
+    if filepath and not _is_shell_safe(filepath):
+        console.print(f"[red]✗ Rejected file path with unsafe characters: {filepath!r}[/red]")
+        filepath = ""
+
     if filepath and os.path.exists(filepath):
         console.print(f"\n[cyan]Analyzing {filepath}...[/cyan]\n")
-        
+
         import subprocess
-        
+
         # Common analysis
         subprocess.run(f"file '{filepath}'", shell=True)
         subprocess.run(f"strings '{filepath}' | grep -iE 'flag|ctf|key' | head -10", shell=True)
@@ -262,7 +307,13 @@ async def run_osint_mode(ai_service):
     target = Prompt.ask(f"Enter {target_type}")
     if not target:
         return
-    
+
+    # SECURITY: reject targets with shell metacharacters before they are
+    # interpolated into the OSINT shell pipelines below (CWE-78).
+    if not _is_shell_safe(target):
+        console.print(f"[red]✗ Rejected target with unsafe characters: {target!r}[/red]")
+        return
+
     console.print(f"\n[cyan]Running OSINT on {target}...[/cyan]\n")
     
     import subprocess
@@ -359,12 +410,10 @@ async def run_agent_phase(ai_service, phase_name: str, target: str, commands: Li
             continue
         
         console.print(f"[cyan]$ {cmd[:80]}...[/cyan]")
-        
+
         try:
-            result = subprocess.run(
-                cmd, shell=True, capture_output=True, text=True, timeout=120
-            )
-            output = (result.stdout + result.stderr)[:1000]
+            # SECURITY: run as argv (shell=False) via _run_ai_command
+            output = _run_ai_command(cmd, timeout=120)[:1000]
             if output.strip():
                 console.print(output)
         except subprocess.TimeoutExpired:
@@ -378,18 +427,10 @@ async def run_command_with_output(cmd: str):
     import subprocess
     import shutil
     
-    tool = cmd.split()[0]
-    if not shutil.which(tool):
-        console.print(f"[dim]{tool} not installed[/dim]")
-        return
-    
-    try:
-        result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=180)
-        output = (result.stdout + result.stderr)[:2000]
-        if output.strip():
-            console.print(output)
-    except Exception as e:
-        console.print(f"[red]Error: {e}[/red]")
+    # SECURITY: AI-generated command run as argv (shell=False) via _run_ai_command
+    output = _run_ai_command(cmd, timeout=180)[:2000]
+    if output.strip():
+        console.print(output)
 
 
 async def run_inline_multiagent(ai_service, target: str, attack_tree=None, agents=None):
@@ -421,12 +462,11 @@ Suggest ONE specific command to run. Just the command, nothing else."""
                 cmd = cmd.split('\n')[0]
             
             console.print(f"[cyan]$ {cmd}[/cyan]")
-            
-            # Execute
+
+            # Execute (AI-generated command run as argv, shell=False)
             tool = cmd.split()[0] if cmd else ""
-            if tool and shutil.which(tool):
-                result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=120)
-                output = (result.stdout + result.stderr)[:1500]
+            if tool:
+                output = _run_ai_command(cmd, timeout=120)[:1500]
                 console.print(output)
                 
                 # Extract findings

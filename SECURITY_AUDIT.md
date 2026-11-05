@@ -22,12 +22,12 @@ trust boundary of each remaining sink so the risk can be judged correctly.
 | Scanner integration | `kali_gpt/integrations/scanner.py` | Enhanced CLI (operator/AI input) | ✅ FIXED (validated argv via `execute_argv`, `shell=False`) |
 | Metasploit integration | `kali_gpt/integrations/metasploit.py` | Enhanced CLI | ✅ FIXED (validated argv, `shell=False`, msf-input allowlists) |
 | Core executor | `kali_gpt/modules/command_executor.py` | Interactive CLI, has validator + confirm | ✅ Added `execute_argv()` (safe argv API); string `execute()` kept for interactive use (see note) |
-| Exploit engine | `kali_gpt/exploit_engine.py` | Autonomous/CLI | ⏳ Not yet fixed |
-| v4 agents | `kali_gpt/agents/agents_v4.py` | Autonomous | ⏳ Not yet fixed |
-| Autonomous script | `kali-gpt-autonomous.py` | Autonomous CLI (AI-composed commands) | ⏳ Not yet fixed |
-| Bug bounty scripts | `bug_bounty_hunter.py`, `kali_gpt/bug_bounty_hunter.py` | CLI | ⏳ Not yet fixed |
-| Multi-agent script | `multi_agent.py` | CLI | ⏳ Not yet fixed |
-| Advanced CLI | `kali-gpt-advanced.py` (line ~182) | Interactive, user confirms | ⏳ Low risk (user-typed, confirmed) |
+| Exploit engine | `kali_gpt/exploit_engine.py` | Autonomous/CLI | ✅ FIXED (CVE search → argv; template values validated, no shell metachars) |
+| v4 agents | `kali_gpt/agents/agents_v4.py` | Autonomous (AI-composed) | ✅ FIXED (AI command → `shlex.split` + `shell=False`) |
+| Autonomous script | `kali-gpt-autonomous.py` | Autonomous CLI (AI-composed commands) | ✅ FIXED (central `execute()` → argv; forensic inputs guarded at source; several helpers → argv) |
+| Bug bounty scripts | `bug_bounty_hunter.py`, `kali_gpt/bug_bounty_hunter.py` | CLI | ✅ FIXED (root target validated at `recon()` entry; downstream assets are DNS/crawl-derived) |
+| Multi-agent script | `multi_agent.py` | CLI | ✅ FIXED (AI commands → argv via `_run_ai_command`; interactive filepath/target guarded) |
+| Advanced CLI | `kali-gpt-advanced.py` (line ~182) | Interactive, user confirms + dangerous-cmd detection | ⏳ Low risk (user-typed, confirmed) — left as-is |
 
 ---
 
@@ -101,15 +101,35 @@ metasploit, agents) through that instead of string building. Tracked as follow-u
 
 1. ~~Migrate `scanner.py` and `metasploit.py`~~ — ✅ done (validated argv + `shell=False`).
 2. ~~Add `execute_argv()` to `CommandExecutor`~~ — ✅ done; integrations route through it.
-3. Migrate the autonomous and bug-bounty scripts (`kali-gpt-autonomous.py`,
-   `bug_bounty_hunter.py`, `kali_gpt/bug_bounty_hunter.py`, `multi_agent.py`,
-   `kali_gpt/agents/agents_v4.py`, `kali_gpt/exploit_engine.py`). Still pending.
+3. ~~Migrate autonomous, bug-bounty, multi-agent, agents_v4, exploit_engine~~ —
+   ✅ done (see progress log).
 4. Remove the now-redundant `mcp_server_secure.py` after confirming parity.
 5. Add CI that fails on new `shell=True` with an f-string (a lint rule).
+
+## Approach notes for the AI/CLI scripts
+
+- **AI-composed commands** (agents_v4, multi_agent, autonomous `execute()`): the
+  model's command string is `shlex.split` into an argv list and run with
+  `shell=False`. Shell operators in model output become literal arguments and
+  cannot chain a second command. (Trade-off: shell pipes/redirects in a single
+  AI command no longer function — acceptable for safety.)
+- **Interactive forensic/OSINT pipelines** that legitimately use pipes
+  (`strings | grep | head`): the user-controlled value (filepath/url/target/
+  image/path/wordlist) is rejected at its input source if it contains shell
+  metacharacters, so it cannot break out of the pipeline. Where easy, individual
+  calls were also converted to argv (e.g. steghide, john).
+- **Exploit templates** (exploit_engine): the template is trusted (code-defined);
+  substituted values are validated to contain no shell metacharacters.
+- **Bug bounty**: the root target is validated at the `recon()` entry; downstream
+  assets are DNS/crawl-derived hostnames/URLs.
 
 ## Progress log
 
 - 2026-11-05: `mcp_server.py` fixed in place; validator + tests added.
 - 2026-11-05: `scanner.py`, `metasploit.py` migrated to validated argv;
-  `CommandExecutor.execute_argv()` added; test suite extended to 16 tests
-  (all passing).
+  `CommandExecutor.execute_argv()` added; test suite extended to 16 tests.
+- 2026-11-05: `exploit_engine.py`, `agents_v4.py`, `multi_agent.py`,
+  `kali-gpt-autonomous.py`, and both `bug_bounty_hunter.py` files hardened
+  (argv for AI/command paths; input guards at source for interactive pipelines).
+  Test suite now 17 tests, all passing. Remaining residual: a set of local,
+  interactive forensic pipelines whose inputs are now guarded at the source.
