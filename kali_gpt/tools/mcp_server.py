@@ -33,6 +33,17 @@ from datetime import datetime
 from typing import Dict, List, Any, Optional
 from pathlib import Path
 
+# SECURITY: Input validation to prevent command injection (CWE-78)
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+try:
+    from kali_gpt.utils.input_validator import validator, InputValidationError
+except ImportError:
+    # Fallback: refuse to run tools rather than execute unvalidated input
+    validator = None
+
+    class InputValidationError(Exception):
+        pass
+
 # MCP Protocol imports
 try:
     from mcp.server import Server
@@ -218,202 +229,299 @@ KALI_TOOLS = {
 # TOOL EXECUTION
 # =============================================================================
 
-def execute_tool(tool_name: str, params: Dict) -> Dict:
-    """Execute a security tool and return results"""
-    
-    if tool_name not in KALI_TOOLS:
-        return {"error": f"Unknown tool: {tool_name}"}
-    
-    # Build command based on tool
-    command = None
-    
-    if tool_name == "nmap_scan":
-        target = params.get("target", "")
-        ports = params.get("ports", "")
-        scan_type = params.get("scan_type", "quick")
-        
-        if scan_type == "quick":
-            command = f"nmap -T4 --top-ports 100 {target}"
-        elif scan_type == "full":
-            command = f"nmap -sV -sC -T4 {'-p ' + ports if ports else ''} {target}"
-        elif scan_type == "vuln":
-            command = f"nmap --script=vuln {target}"
-        elif scan_type == "stealth":
-            command = f"nmap -sS -T2 {target}"
-        else:
-            command = f"nmap -sV -sC -T4 {target}"
-    
-    elif tool_name == "masscan_scan":
-        target = params.get("target", "")
-        ports = params.get("ports", "1-1000")
-        rate = params.get("rate", 1000)
-        command = f"masscan {target} -p{ports} --rate={rate}"
-    
-    elif tool_name == "gobuster_scan":
-        url = params.get("url", "")
-        wordlist = params.get("wordlist", "/usr/share/wordlists/dirb/common.txt")
-        extensions = params.get("extensions", "")
-        ext_flag = f"-x {extensions}" if extensions else ""
-        command = f"gobuster dir -u {url} -w {wordlist} {ext_flag} -t 30 -q"
-    
-    elif tool_name == "ffuf_scan":
-        url = params.get("url", "")
-        wordlist = params.get("wordlist", "/usr/share/wordlists/dirb/common.txt")
-        filter_code = params.get("filter_code", "")
-        fc_flag = f"-fc {filter_code}" if filter_code else ""
-        command = f"ffuf -u {url} -w {wordlist} {fc_flag} -t 50"
-    
-    elif tool_name == "nuclei_scan":
-        target = params.get("target", "")
-        templates = params.get("templates", "")
-        severity = params.get("severity", "")
-        t_flag = f"-t {templates}/" if templates else ""
-        s_flag = f"-severity {severity}" if severity else ""
-        command = f"nuclei -u {target} {t_flag} {s_flag}"
-    
-    elif tool_name == "nikto_scan":
-        target = params.get("target", "")
-        tuning = params.get("tuning", "")
-        t_flag = f"-Tuning {tuning}" if tuning else ""
-        command = f"nikto -h {target} {t_flag}"
-    
-    elif tool_name == "wpscan_scan":
-        url = params.get("url", "")
-        enumerate = params.get("enumerate", "ap,at,u")
-        command = f"wpscan --url {url} --enumerate {enumerate}"
-    
-    elif tool_name == "sqlmap_scan":
-        url = params.get("url", "")
-        dbs = params.get("dbs", False)
-        level = params.get("level", 1)
-        dbs_flag = "--dbs" if dbs else ""
-        command = f"sqlmap -u \"{url}\" {dbs_flag} --level={level} --batch"
-    
-    elif tool_name == "enum4linux_scan":
-        target = params.get("target", "")
-        options = params.get("options", "-a")
-        command = f"enum4linux {options} {target}"
-    
-    elif tool_name == "smbclient_list":
-        target = params.get("target", "")
-        username = params.get("username", "")
-        password = params.get("password", "")
-        if username and password:
-            command = f"smbclient -L //{target} -U {username}%{password}"
-        else:
-            command = f"smbclient -L //{target} -N"
-    
-    elif tool_name == "hydra_attack":
-        target = params.get("target", "")
-        service = params.get("service", "ssh")
-        username = params.get("username", "admin")
-        password_list = params.get("password_list", "/usr/share/wordlists/rockyou.txt")
-        command = f"hydra -l {username} -P {password_list} {target} {service}"
-    
-    elif tool_name == "prowler_scan":
-        provider = params.get("provider", "aws")
-        checks = params.get("checks", "")
-        c_flag = f"-c {checks}" if checks else ""
-        command = f"prowler {provider} {c_flag}"
-    
-    elif tool_name == "trivy_scan":
-        target = params.get("target", "")
-        scan_type = params.get("scan_type", "image")
-        command = f"trivy {scan_type} {target}"
-    
-    elif tool_name == "subfinder_enum":
-        domain = params.get("domain", "")
-        command = f"subfinder -d {domain} -silent"
-    
-    elif tool_name == "theharvester_scan":
-        domain = params.get("domain", "")
-        sources = params.get("sources", "all")
-        command = f"theHarvester -d {domain} -b {sources}"
-    
-    elif tool_name == "whatweb_scan":
-        target = params.get("target", "")
-        command = f"whatweb {target} -a 3"
-    
-    elif tool_name == "searchsploit_search":
-        query = params.get("query", "")
-        command = f"searchsploit {query}"
-    
-    if not command:
+def _run_argv(cmd: List[str], timeout: int = 300, tool_name: str = "") -> Dict:
+    """
+    SECURITY: Execute a command as an argv list with shell=False.
+
+    Passing a list with shell=False hands arguments straight to execve(), so
+    shell metacharacters (; | & ` $() etc.) in any argument are treated as
+    literal data and can never start a new command (CWE-78 mitigation).
+    """
+    if not cmd:
         return {"error": "Could not build command"}
-    
-    # Check if tool exists
-    tool_bin = command.split()[0]
+
+    tool_bin = cmd[0]
     if not shutil.which(tool_bin):
         return {"error": f"Tool not installed: {tool_bin}"}
-    
-    # Execute
+
     try:
         result = subprocess.run(
-            command,
-            shell=True,
+            cmd,
+            shell=False,  # SECURITY: never use shell=True with external input
             capture_output=True,
             text=True,
-            timeout=300
+            timeout=timeout,
         )
-        
         return {
             "tool": tool_name,
-            "command": command,
+            "command": " ".join(cmd),  # display/logging only, never re-executed
             "output": result.stdout + result.stderr,
             "return_code": result.returncode,
             "success": result.returncode == 0 or len(result.stdout) > 0,
-            "timestamp": datetime.now().isoformat()
+            "timestamp": datetime.now().isoformat(),
         }
-    
     except subprocess.TimeoutExpired:
-        return {"error": "Command timed out", "command": command}
+        return {"error": "Command timed out", "command": " ".join(cmd)}
     except Exception as e:
-        return {"error": str(e), "command": command}
+        return {"error": str(e), "command": " ".join(cmd)}
+
+
+def _build_command(tool_name: str, params: Dict) -> List[str]:
+    """
+    Build a validated argv list for a tool.
+
+    SECURITY: Every user-controllable value is validated through the allowlist
+    validators before it is placed into the argv list. Validation failures raise
+    InputValidationError, which the caller turns into an error response.
+    """
+    if validator is None:
+        raise InputValidationError(
+            "Input validator unavailable; refusing to execute to avoid command injection"
+        )
+
+    if tool_name == "nmap_scan":
+        target = validator.validate_target(params.get("target", ""))
+        scan_type = validator.validate_scan_type(params.get("scan_type", "quick"))
+        cmd = ["nmap"]
+        if scan_type == "quick":
+            cmd += ["-T4", "--top-ports", "100", target]
+        elif scan_type == "full":
+            cmd += ["-sV", "-sC", "-T4"]
+            if params.get("ports"):
+                cmd += ["-p", validator.validate_port_range(params["ports"])]
+            cmd.append(target)
+        elif scan_type == "vuln":
+            cmd += ["--script=vuln", target]
+        elif scan_type == "stealth":
+            cmd += ["-sS", "-T2", target]
+        else:
+            cmd += ["-sV", "-sC", "-T4", target]
+        return cmd
+
+    if tool_name == "masscan_scan":
+        target = validator.validate_target(params.get("target", ""))
+        ports = validator.validate_port_range(params.get("ports", "1-1000"))
+        rate = int(params.get("rate", 1000))
+        if not (1 <= rate <= 100000):
+            raise InputValidationError(f"Invalid rate: {rate} (must be 1-100000)")
+        return ["masscan", target, f"-p{ports}", f"--rate={rate}"]
+
+    if tool_name == "gobuster_scan":
+        url = validator.validate_url(params.get("url", ""))
+        wordlist = _safe_wordlist(params.get("wordlist"))
+        cmd = ["gobuster", "dir", "-u", url, "-w", wordlist, "-t", "30", "-q"]
+        ext = params.get("extensions", "")
+        if ext:
+            if not all(c.isalnum() or c == "," for c in ext):
+                raise InputValidationError(f"Invalid extensions: {ext}")
+            cmd += ["-x", ext]
+        return cmd
+
+    if tool_name == "ffuf_scan":
+        url = validator.validate_url(params.get("url", ""))
+        wordlist = _safe_wordlist(params.get("wordlist"))
+        cmd = ["ffuf", "-u", url, "-w", wordlist, "-t", "50"]
+        fc = params.get("filter_code", "")
+        if fc:
+            if not all(c.isdigit() or c == "," for c in fc):
+                raise InputValidationError(f"Invalid filter_code: {fc}")
+            cmd += ["-fc", fc]
+        return cmd
+
+    if tool_name == "nuclei_scan":
+        target = validator.validate_url(params.get("target", ""))
+        cmd = ["nuclei", "-u", target]
+        templates = params.get("templates", "")
+        if templates:
+            cmd += ["-t", validator.validate_alphanumeric(templates, "templates") + "/"]
+        severity = params.get("severity", "")
+        if severity:
+            cmd += ["-severity", validator.validate_severity(severity)]
+        return cmd
+
+    if tool_name == "nikto_scan":
+        target = validator.validate_url(params.get("target", ""), require_http=False)
+        cmd = ["nikto", "-h", target]
+        tuning = params.get("tuning", "")
+        if tuning:
+            cmd += ["-Tuning", validator.validate_alphanumeric(tuning, "tuning")]
+        return cmd
+
+    if tool_name == "wpscan_scan":
+        url = validator.validate_url(params.get("url", ""))
+        enumerate = params.get("enumerate", "ap,at,u")
+        if not all(c.isalnum() or c == "," for c in enumerate):
+            raise InputValidationError(f"Invalid enumerate value: {enumerate}")
+        return ["wpscan", "--url", url, "--enumerate", enumerate]
+
+    if tool_name == "sqlmap_scan":
+        url = validator.validate_url(params.get("url", ""))
+        level = int(params.get("level", 1))
+        if not (1 <= level <= 5):
+            raise InputValidationError(f"Invalid level: {level} (must be 1-5)")
+        cmd = ["sqlmap", "-u", url, "--level", str(level), "--batch"]
+        if params.get("dbs", False):
+            cmd.append("--dbs")
+        return cmd
+
+    if tool_name == "enum4linux_scan":
+        target = validator.validate_target(params.get("target", ""))
+        options = params.get("options", "-a")
+        # Allowlist of safe enum4linux flags only
+        if options not in ("-a", "-U", "-S", "-G", "-P", "-o"):
+            raise InputValidationError(f"Invalid options: {options}")
+        return ["enum4linux", options, target]
+
+    if tool_name == "smbclient_list":
+        target = validator.validate_target(params.get("target", ""))
+        username = params.get("username", "")
+        password = params.get("password", "")
+        if username and password:
+            username = validator.validate_username(username)
+            # Password passed as a separate argv element: not shell-interpreted.
+            return ["smbclient", "-L", f"//{target}", "-U", f"{username}%{password}"]
+        return ["smbclient", "-L", f"//{target}", "-N"]
+
+    if tool_name == "hydra_attack":
+        target = validator.validate_target(params.get("target", ""))
+        service = validator.validate_service_name(params.get("service", "ssh"))
+        username = validator.validate_username(params.get("username", "admin"))
+        password_list = _safe_wordlist(params.get("password_list"), "/usr/share/wordlists/rockyou.txt")
+        return ["hydra", "-l", username, "-P", password_list, target, service]
+
+    if tool_name == "prowler_scan":
+        provider = params.get("provider", "aws")
+        if provider not in ("aws", "azure", "gcp"):
+            raise InputValidationError(f"Invalid provider: {provider}")
+        cmd = ["prowler", provider]
+        checks = params.get("checks", "")
+        if checks:
+            cmd += ["-c", validator.validate_alphanumeric(checks, "checks")]
+        return cmd
+
+    if tool_name == "trivy_scan":
+        target = params.get("target", "")
+        scan_type = params.get("scan_type", "image")
+        if scan_type not in ("image", "fs", "repo", "config"):
+            raise InputValidationError(f"Invalid scan_type: {scan_type}")
+        # Image names / paths: allow a conservative character set, no shell metachars.
+        if not re_target_ok(target):
+            raise InputValidationError(f"Invalid trivy target: {target}")
+        return ["trivy", scan_type, target]
+
+    if tool_name == "subfinder_enum":
+        domain = validator.validate_domain(params.get("domain", ""))
+        return ["subfinder", "-d", domain, "-silent"]
+
+    if tool_name == "theharvester_scan":
+        domain = validator.validate_domain(params.get("domain", ""))
+        sources = params.get("sources", "all")
+        if not all(c.isalnum() or c in ",_-" for c in sources):
+            raise InputValidationError(f"Invalid sources: {sources}")
+        return ["theHarvester", "-d", domain, "-b", sources]
+
+    if tool_name == "whatweb_scan":
+        target = validator.validate_url(params.get("target", ""), require_http=False)
+        return ["whatweb", target, "-a", "3"]
+
+    if tool_name == "searchsploit_search":
+        query = params.get("query", "")
+        # searchsploit takes free-text terms; allow words/numbers/dots/hyphens only.
+        if not query or not all(c.isalnum() or c in " ._-" for c in query):
+            raise InputValidationError(f"Invalid search query: {query}")
+        return ["searchsploit"] + query.split()
+
+    raise InputValidationError(f"Tool not supported: {tool_name}")
+
+
+def _safe_wordlist(path: Optional[str], default: str = "/usr/share/wordlists/dirb/common.txt") -> str:
+    """Validate a wordlist path, falling back to a safe default on failure."""
+    if not path:
+        return default
+    try:
+        return validator.validate_wordlist_path(path)
+    except InputValidationError:
+        return default
+
+
+def re_target_ok(target: str) -> bool:
+    """Conservative check for image names / filesystem paths (no shell metachars)."""
+    import re
+    return bool(re.match(r'^[A-Za-z0-9][A-Za-z0-9_./:@\-]{0,254}$', target or ""))
+
+
+def execute_tool(tool_name: str, params: Dict) -> Dict:
+    """
+    Execute a security tool and return results.
+
+    SECURITY (CWE-78 fix): all parameters are validated by allowlist and the
+    command is executed as an argv list with shell=False. No user input is ever
+    interpolated into a shell string.
+    """
+    if tool_name not in KALI_TOOLS:
+        return {"error": f"Unknown tool: {tool_name}"}
+
+    try:
+        cmd = _build_command(tool_name, params)
+    except InputValidationError as e:
+        return {"error": f"Input validation failed: {e}", "tool": tool_name}
+    except (ValueError, TypeError) as e:
+        return {"error": f"Invalid parameter: {e}", "tool": tool_name}
+
+    # hydra brute force gets a longer timeout
+    timeout = 600 if tool_name == "hydra_attack" else 300
+    return _run_argv(cmd, timeout=timeout, tool_name=tool_name)
 
 
 # =============================================================================
 # MCP SERVER (for Claude Desktop / VS Code)
 # =============================================================================
 
-if MCP_AVAILABLE:
-    mcp_server = Server("kali-gpt")
-    
-    @mcp_server.list_tools()
-    async def list_tools() -> List[Tool]:
-        """List available tools"""
-        tools = []
-        for name, info in KALI_TOOLS.items():
-            tools.append(Tool(
-                name=name,
-                description=info["description"],
-                inputSchema={
-                    "type": "object",
-                    "properties": info["parameters"],
-                    "required": [k for k, v in info["parameters"].items() if v.get("required")]
-                }
-            ))
-        return tools
-    
-    @mcp_server.call_tool()
-    async def call_tool(name: str, arguments: Dict) -> List[TextContent]:
-        """Execute a tool"""
-        result = execute_tool(name, arguments)
-        
-        if "error" in result:
+# Guard registration so an incompatible installed `mcp` version cannot crash
+# module import (which would also break the HTTP and CLI modes below).
+try:
+    if MCP_AVAILABLE:
+        mcp_server = Server("kali-gpt")
+
+        @mcp_server.list_tools()
+        async def list_tools() -> List[Tool]:
+            """List available tools"""
+            tools = []
+            for name, info in KALI_TOOLS.items():
+                tools.append(Tool(
+                    name=name,
+                    description=info["description"],
+                    inputSchema={
+                        "type": "object",
+                        "properties": info["parameters"],
+                        "required": [k for k, v in info["parameters"].items() if v.get("required")]
+                    }
+                ))
+            return tools
+
+        @mcp_server.call_tool()
+        async def call_tool(name: str, arguments: Dict) -> List[TextContent]:
+            """Execute a tool"""
+            result = execute_tool(name, arguments)
+
+            if "error" in result:
+                return [TextContent(
+                    type="text",
+                    text=f"Error: {result['error']}\nCommand: {result.get('command', 'N/A')}"
+                )]
+
             return [TextContent(
                 type="text",
-                text=f"Error: {result['error']}\nCommand: {result.get('command', 'N/A')}"
+                text=f"Tool: {result['tool']}\nCommand: {result['command']}\n\nOutput:\n{result['output']}"
             )]
-        
-        return [TextContent(
-            type="text",
-            text=f"Tool: {result['tool']}\nCommand: {result['command']}\n\nOutput:\n{result['output']}"
-        )]
-    
-    async def run_mcp_server():
-        """Run MCP server via stdio"""
-        async with stdio_server() as (read_stream, write_stream):
-            await mcp_server.run(read_stream, write_stream)
+
+        async def run_mcp_server():
+            """Run MCP server via stdio"""
+            async with stdio_server() as (read_stream, write_stream):
+                await mcp_server.run(read_stream, write_stream)
+except Exception as _mcp_reg_err:  # pragma: no cover - depends on installed mcp version
+    MCP_AVAILABLE = False
+    print(f"MCP registration skipped (incompatible mcp version): {_mcp_reg_err}", file=sys.stderr)
 
 
 # =============================================================================
@@ -429,7 +537,8 @@ if FLASK_AVAILABLE:
         """Health check endpoint"""
         return jsonify({
             "status": "healthy",
-            "version": "4.0",
+            "version": "4.1",
+            "security": "CWE-78 command injection fixed (validated argv, shell=False)",
             "tools_available": len(KALI_TOOLS),
             "timestamp": datetime.now().isoformat()
         })
@@ -461,29 +570,51 @@ if FLASK_AVAILABLE:
     
     @app.route("/api/command", methods=["POST"])
     def raw_command():
-        """Execute a raw command (with caution)"""
+        """
+        Execute a raw command.
+
+        SECURITY: A network endpoint that runs arbitrary commands is dangerous
+        by design and a blocklist does not make it safe. It is therefore DISABLED
+        unless the operator explicitly opts in by setting the environment variable
+        KALI_GPT_ALLOW_RAW_COMMAND=1. When enabled, the command is split with
+        shlex and executed with shell=False so shell metacharacters are not
+        interpreted. Prefer the validated /execute endpoint instead.
+        """
+        if os.environ.get("KALI_GPT_ALLOW_RAW_COMMAND") != "1":
+            return jsonify({
+                "error": "Raw command endpoint disabled. Use /execute, or set "
+                         "KALI_GPT_ALLOW_RAW_COMMAND=1 to explicitly enable (not recommended)."
+            }), 403
+
         data = request.json
         command = data.get("command")
-        
+
         if not command:
             return jsonify({"error": "Missing command"}), 400
-        
-        # Basic safety check
-        dangerous = ["rm -rf", "mkfs", "dd if=", "> /dev/"]
-        if any(d in command for d in dangerous):
-            return jsonify({"error": "Dangerous command blocked"}), 403
-        
+
+        import shlex
+        try:
+            argv = shlex.split(command)
+        except ValueError as e:
+            return jsonify({"error": f"Could not parse command: {e}"}), 400
+
+        if not argv:
+            return jsonify({"error": "Empty command"}), 400
+
+        if not shutil.which(argv[0]):
+            return jsonify({"error": f"Tool not installed: {argv[0]}"}), 400
+
         try:
             result = subprocess.run(
-                command,
-                shell=True,
+                argv,
+                shell=False,  # SECURITY: no shell interpretation of metacharacters
                 capture_output=True,
                 text=True,
                 timeout=120
             )
-            
+
             return jsonify({
-                "command": command,
+                "command": " ".join(argv),
                 "output": result.stdout + result.stderr,
                 "return_code": result.returncode,
                 "success": result.returncode == 0
