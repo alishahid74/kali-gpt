@@ -159,35 +159,38 @@ Other files with potential `shell=True` usage:
 
 ### Injection Tests (Should All Fail)
 
+> The runnable version of these lives in `tests/test_security.py`
+> (`python3 tests/test_security.py`). Illustrative form:
+
 ```python
-from kali_gpt.tools.mcp_server_secure import execute_tool_secure
+from kali_gpt.tools.mcp_server import execute_tool
 
 # Test 1: Semicolon injection
-result = execute_tool_secure("nmap_scan", {
+result = execute_tool("nmap_scan", {
     "target": "127.0.0.1; whoami"
 })
 assert "error" in result  # ✅ BLOCKED
 
 # Test 2: Pipe injection
-result = execute_tool_secure("nmap_scan", {
+result = execute_tool("nmap_scan", {
     "target": "127.0.0.1 | cat /etc/passwd"
 })
 assert "error" in result  # ✅ BLOCKED
 
 # Test 3: Backtick injection
-result = execute_tool_secure("subfinder_enum", {
+result = execute_tool("subfinder_enum", {
     "domain": "example.com`whoami`"
 })
 assert "error" in result  # ✅ BLOCKED
 
 # Test 4: Dollar sign injection
-result = execute_tool_secure("nmap_scan", {
+result = execute_tool("nmap_scan", {
     "target": "127.0.0.1$(whoami)"
 })
 assert "error" in result  # ✅ BLOCKED
 
 # Test 5: Path traversal
-result = execute_tool_secure("gobuster_scan", {
+result = execute_tool("gobuster_scan", {
     "wordlist": "../../../etc/passwd"
 })
 assert "error" in result  # ✅ BLOCKED
@@ -197,34 +200,34 @@ assert "error" in result  # ✅ BLOCKED
 
 ```python
 # Test 1: Valid IP scan
-result = execute_tool_secure("nmap_scan", {
+result = execute_tool("nmap_scan", {
     "target": "192.168.1.1",
     "scan_type": "quick"
 })
 assert result["success"]  # ✅ WORKS
 
 # Test 2: Valid CIDR scan
-result = execute_tool_secure("nmap_scan", {
+result = execute_tool("nmap_scan", {
     "target": "10.0.0.0/24",
     "scan_type": "quick"
 })
 assert result["success"]  # ✅ WORKS
 
 # Test 3: Valid hostname
-result = execute_tool_secure("nmap_scan", {
+result = execute_tool("nmap_scan", {
     "target": "example.com"
 })
 assert result["success"]  # ✅ WORKS
 
 # Test 4: Valid URL
-result = execute_tool_secure("gobuster_scan", {
+result = execute_tool("gobuster_scan", {
     "url": "https://example.com",
     "wordlist": "/usr/share/wordlists/dirb/common.txt"
 })
 assert result["success"]  # ✅ WORKS
 
 # Test 5: Valid domain
-result = execute_tool_secure("subfinder_enum", {
+result = execute_tool("subfinder_enum", {
     "domain": "example.com"
 })
 assert result["success"]  # ✅ WORKS
@@ -259,18 +262,23 @@ assert result["success"]  # ✅ WORKS
    pip install -r requirements.txt --upgrade
    ```
 
-3. **Switch to secure MCP server:**
+3. **Run the MCP server (now fixed in place):**
    ```bash
-   # Use secure version
-   python3 kali_gpt/tools/mcp_server_secure.py --mode mcp
+   # mcp_server.py itself is patched — no separate "secure" file needed
+   python3 kali_gpt/tools/mcp_server.py --mode mcp
    ```
 
 4. **Verify security:**
    ```bash
-   # Should show "SECURE" version
-   python3 kali_gpt/tools/mcp_server_secure.py --mode cli
-   # Output: "✓ CWE-78 Command Injection FIXED"
+   # Health endpoint reports the fix
+   python3 kali_gpt/tools/mcp_server.py --mode http &
+   curl -s localhost:8888/health
+   # "security": "CWE-78 command injection fixed (validated argv, shell=False)"
    ```
+
+> Historical note: an earlier iteration shipped a separate
+> `kali_gpt/tools/mcp_server_secure.py`. That file has since been **removed** —
+> the fix now lives in `mcp_server.py` directly.
 
 ### For Developers
 

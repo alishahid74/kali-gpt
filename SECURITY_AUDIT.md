@@ -17,7 +17,7 @@ trust boundary of each remaining sink so the risk can be judged correctly.
 | MCP tool execution | `kali_gpt/tools/mcp_server.py` | **Network / no confirmation** | ✅ FIXED in place (validated argv, `shell=False`) |
 | MCP raw command endpoint | `kali_gpt/tools/mcp_server.py` `/api/command` | **Network / arbitrary RCE by design** | ✅ Disabled by default, opt-in env var, `shell=False` + `shlex` |
 | Input validation library | `kali_gpt/utils/input_validator.py` | n/a | ✅ Added |
-| Secure reference server | `kali_gpt/tools/mcp_server_secure.py` | n/a | ✅ Added earlier (now redundant with the in-place fix) |
+| Secure reference server | `kali_gpt/tools/mcp_server_secure.py` | n/a | 🗑️ Removed — redundant now that `mcp_server.py` is fixed in place |
 | Regression tests | `tests/test_security.py` | n/a | ✅ Added (12 tests, passing) |
 | Scanner integration | `kali_gpt/integrations/scanner.py` | Enhanced CLI (operator/AI input) | ✅ FIXED (validated argv via `execute_argv`, `shell=False`) |
 | Metasploit integration | `kali_gpt/integrations/metasploit.py` | Enhanced CLI | ✅ FIXED (validated argv, `shell=False`, msf-input allowlists) |
@@ -48,8 +48,7 @@ The reported file, `kali_gpt/tools/mcp_server.py`, was patched **in place**:
 
 > Note: an earlier pass added `mcp_server_secure.py` as a *separate* file but left
 > the vulnerable `mcp_server.py` in place. That gap is now closed — the reported
-> file itself is fixed. `mcp_server_secure.py` is kept as a reference and can be
-> removed in a later cleanup.
+> file itself is fixed, and the redundant `mcp_server_secure.py` has been removed.
 
 Verified by `tests/test_security.py` (run: `python3 tests/test_security.py`):
 injection payloads in `target`/`domain`/`url`/`ports`/`wordlist` are rejected,
@@ -103,8 +102,9 @@ metasploit, agents) through that instead of string building. Tracked as follow-u
 2. ~~Add `execute_argv()` to `CommandExecutor`~~ — ✅ done; integrations route through it.
 3. ~~Migrate autonomous, bug-bounty, multi-agent, agents_v4, exploit_engine~~ —
    ✅ done (see progress log).
-4. Remove the now-redundant `mcp_server_secure.py` after confirming parity.
-5. Add CI that fails on new `shell=True` with an f-string (a lint rule).
+4. ~~Remove the now-redundant `mcp_server_secure.py`~~ — ✅ done.
+5. ~~Add CI that fails on new `shell=True` with an f-string~~ — ✅ done
+   (`scripts/lint_shell_exec.py`, run in `.github/workflows/security-lint.yml`).
 
 ## Approach notes for the AI/CLI scripts
 
@@ -122,6 +122,19 @@ metasploit, agents) through that instead of string building. Tracked as follow-u
   substituted values are validated to contain no shell metacharacters.
 - **Bug bounty**: the root target is validated at the `recon()` entry; downstream
   assets are DNS/crawl-derived hostnames/URLs.
+
+## CI guard rail
+
+`scripts/lint_shell_exec.py` scans for `subprocess(..., shell=True)` where the
+command is a dynamically built string (f-string, `+`, `%`, `.format()`) — the
+classic injection sink. A baseline (`scripts/.shell_lint_baseline.json`) records
+the reviewed, already-guarded cases, so the linter **fails only on new ones**.
+It runs in `.github/workflows/security-lint.yml` on every push/PR, alongside the
+security test suite.
+
+- Check locally: `python3 scripts/lint_shell_exec.py`
+- Accept a reviewed change: `python3 scripts/lint_shell_exec.py --update-baseline`
+- Exempt a single reviewed line: trailing `# nosec: shell` comment
 
 ## Progress log
 
