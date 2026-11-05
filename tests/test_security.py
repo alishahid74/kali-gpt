@@ -27,6 +27,16 @@ from kali_gpt.utils.input_validator import validator, InputValidationError
 from kali_gpt.tools import mcp_server
 
 
+class _FakeConfig:
+    """Minimal config manager stand-in for exercising integration modules."""
+
+    def __init__(self, tmp_dir):
+        self.config_dir = tmp_dir
+
+    def get(self, key, default=None):
+        return default
+
+
 # Common injection payloads that must NEVER be accepted into a command
 INJECTION_PAYLOADS = [
     "127.0.0.1; whoami",
@@ -166,6 +176,63 @@ def test_execute_tool_reports_validation_error_not_execution():
 def test_unknown_tool_rejected():
     result = mcp_server.execute_tool("definitely_not_a_tool", {"target": "x"})
     assert "error" in result
+
+
+# ---------------------------------------------------------------------------
+# scanner.py: injected target is rejected before any tool runs
+# ---------------------------------------------------------------------------
+
+def test_scanner_rejects_injected_target():
+    import tempfile
+    from kali_gpt.integrations import scanner as scanner_mod
+
+    tmp = tempfile.mkdtemp()
+    sm = scanner_mod.ScannerManager(_FakeConfig(tmp), command_executor=None)
+    # Pretend nmap exists so we reach validation; executor is None, so if the
+    # method tried to execute it would crash — proving it must reject first.
+    sm.is_tool_available = lambda name: True
+    result = sm.nmap_scan("127.0.0.1; whoami", scan_type="quick")
+    assert result["success"] is False
+    assert "invalid target" in result["error"].lower()
+
+
+def test_scanner_custom_scan_rejects_unknown_tool():
+    import tempfile
+    from kali_gpt.integrations import scanner as scanner_mod
+
+    tmp = tempfile.mkdtemp()
+    sm = scanner_mod.ScannerManager(_FakeConfig(tmp), command_executor=None)
+    result = sm.run_custom_scan("evil_binary", "127.0.0.1", "")
+    assert result["success"] is False
+    assert "allowlist" in result["error"].lower()
+
+
+# ---------------------------------------------------------------------------
+# metasploit.py: injected values rejected before any tool runs
+# ---------------------------------------------------------------------------
+
+def test_metasploit_search_rejects_injection():
+    from kali_gpt.integrations import metasploit as msf_mod
+
+    m = msf_mod.MetasploitIntegration(_FakeConfig("/tmp"))
+    m.is_available = lambda: True  # reach the validation path
+    # ';' and '"' are not allowed by the search regex -> empty result, no exec
+    assert m.search_exploits('eternalblue"; exit"; id #') == []
+
+
+def test_metasploit_payload_rejects_bad_values():
+    from kali_gpt.integrations import metasploit as msf_mod
+
+    m = msf_mod.MetasploitIntegration(_FakeConfig("/tmp"))
+    m.is_available = lambda: True
+    # Injected LHOST must be rejected by validate_target
+    result = m.generate_payload(
+        "windows/meterpreter/reverse_tcp",
+        lhost="10.0.0.1; rm -rf /",
+        lport="4444",
+    )
+    assert result["success"] is False
+    assert "validation" in result["error"].lower()
 
 
 # ---------------------------------------------------------------------------

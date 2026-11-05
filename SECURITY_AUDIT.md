@@ -19,9 +19,9 @@ trust boundary of each remaining sink so the risk can be judged correctly.
 | Input validation library | `kali_gpt/utils/input_validator.py` | n/a | ✅ Added |
 | Secure reference server | `kali_gpt/tools/mcp_server_secure.py` | n/a | ✅ Added earlier (now redundant with the in-place fix) |
 | Regression tests | `tests/test_security.py` | n/a | ✅ Added (12 tests, passing) |
-| Scanner integration | `kali_gpt/integrations/scanner.py` | Enhanced CLI (operator/AI input) | ⏳ Not yet fixed |
-| Metasploit integration | `kali_gpt/integrations/metasploit.py` | Enhanced CLI | ⏳ Not yet fixed |
-| Core executor | `kali_gpt/modules/command_executor.py` | Interactive CLI, has validator + confirm | ⏳ Partially mitigated (see note) |
+| Scanner integration | `kali_gpt/integrations/scanner.py` | Enhanced CLI (operator/AI input) | ✅ FIXED (validated argv via `execute_argv`, `shell=False`) |
+| Metasploit integration | `kali_gpt/integrations/metasploit.py` | Enhanced CLI | ✅ FIXED (validated argv, `shell=False`, msf-input allowlists) |
+| Core executor | `kali_gpt/modules/command_executor.py` | Interactive CLI, has validator + confirm | ✅ Added `execute_argv()` (safe argv API); string `execute()` kept for interactive use (see note) |
 | Exploit engine | `kali_gpt/exploit_engine.py` | Autonomous/CLI | ⏳ Not yet fixed |
 | v4 agents | `kali_gpt/agents/agents_v4.py` | Autonomous | ⏳ Not yet fixed |
 | Autonomous script | `kali-gpt-autonomous.py` | Autonomous CLI (AI-composed commands) | ⏳ Not yet fixed |
@@ -99,10 +99,17 @@ metasploit, agents) through that instead of string building. Tracked as follow-u
 
 ## Recommended next steps
 
-1. Migrate `scanner.py` and `metasploit.py` (enhanced-mode integrations) first —
-   they take target/port/option input and run under the enhanced CLI.
-2. Add a `execute_argv(cmd: list)` method to `CommandExecutor` and route the
-   integrations through it.
-3. Migrate the autonomous and bug-bounty scripts.
+1. ~~Migrate `scanner.py` and `metasploit.py`~~ — ✅ done (validated argv + `shell=False`).
+2. ~~Add `execute_argv()` to `CommandExecutor`~~ — ✅ done; integrations route through it.
+3. Migrate the autonomous and bug-bounty scripts (`kali-gpt-autonomous.py`,
+   `bug_bounty_hunter.py`, `kali_gpt/bug_bounty_hunter.py`, `multi_agent.py`,
+   `kali_gpt/agents/agents_v4.py`, `kali_gpt/exploit_engine.py`). Still pending.
 4. Remove the now-redundant `mcp_server_secure.py` after confirming parity.
 5. Add CI that fails on new `shell=True` with an f-string (a lint rule).
+
+## Progress log
+
+- 2026-11-05: `mcp_server.py` fixed in place; validator + tests added.
+- 2026-11-05: `scanner.py`, `metasploit.py` migrated to validated argv;
+  `CommandExecutor.execute_argv()` added; test suite extended to 16 tests
+  (all passing).

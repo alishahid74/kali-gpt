@@ -2,10 +2,14 @@
 
 import subprocess
 import json
+import shlex
 import xml.etree.ElementTree as ET
 from typing import Dict, List, Optional
 from pathlib import Path
 import re
+
+# SECURITY: allowlist validation to prevent command injection (CWE-78)
+from ..utils.input_validator import validator, InputValidationError
 
 class ScannerManager:
     """Manages automated vulnerability scanning"""
@@ -62,23 +66,35 @@ class ScannerManager:
             "comprehensive": "-Pn -sS -sV -sC -A -O -p-"
         }
 
-        base_cmd = "nmap"
-        nmap_options = scan_profiles.get(scan_type, "-Pn -sV")
+        # SECURITY: validate target (IP/CIDR/hostname) before use
+        try:
+            target = validator.validate_target(target)
+        except InputValidationError as e:
+            return {"success": False, "error": f"Invalid target: {e}"}
+
+        # Build argv list (no shell). Profile strings are trusted constants.
+        cmd = ["nmap"] + shlex.split(scan_profiles.get(scan_type, "-Pn -sV"))
 
         if ports:
-            nmap_options += f" -p {ports}"
+            try:
+                cmd += ["-p", validator.validate_port_range(str(ports))]
+            except InputValidationError as e:
+                return {"success": False, "error": f"Invalid ports: {e}"}
 
         if options:
-            nmap_options += f" {options}"
+            # Operator-supplied extra flags: tokenize, but pass as argv so shell
+            # metacharacters can never start a new command.
+            cmd += shlex.split(options)
 
         # Output to XML for parsing
         # Replace dots and colons for safe filenames
         safe_target = target.replace('.', '_').replace(':', '_')
         output_file = self.scans_dir / f"nmap_{safe_target}_{scan_type}.xml"
-        command = f"{base_cmd} {nmap_options} -oX {output_file} {target}"
+        cmd += ["-oX", str(output_file), target]
 
-        # Execute scan
-        result = self.executor.execute(command, timeout=600)  # 10 minute timeout
+        # Execute scan (argv, shell=False)
+        result = self.executor.execute_argv(cmd, timeout=600)  # 10 minute timeout
+        command = " ".join(cmd)
 
         if result["success"]:
             # Parse XML results
@@ -221,19 +237,30 @@ class ScannerManager:
         if not self.is_tool_available("nikto"):
             return {"success": False, "error": "Nikto not available"}
 
+        # SECURITY: validate host and port before building the command
+        try:
+            target = validator.validate_target(target)
+        except InputValidationError as e:
+            return {"success": False, "error": f"Invalid target: {e}"}
+        try:
+            port = int(port)
+            if not (1 <= port <= 65535):
+                raise ValueError("port out of range")
+        except (ValueError, TypeError) as e:
+            return {"success": False, "error": f"Invalid port: {e}"}
+
         protocol = "https" if ssl else "http"
         output_file = self.scans_dir / f"nikto_{target.replace('.', '_')}_{port}.txt"
 
-        command = f"nikto -h {protocol}://{target}:{port} -o {output_file}"
-
-        result = self.executor.execute(command, timeout=600)
+        cmd = ["nikto", "-h", f"{protocol}://{target}:{port}", "-o", str(output_file)]
+        result = self.executor.execute_argv(cmd, timeout=600)
 
         return {
             "success": result["success"],
             "output": result["output"],
             "error": result.get("error", ""),
             "output_file": str(output_file),
-            "command": command
+            "command": " ".join(cmd)
         }
 
     def run_custom_scan(self, tool: str, target: str, options: str = "") -> Dict:
@@ -248,17 +275,34 @@ class ScannerManager:
         Returns:
             Scan results
         """
+        # SECURITY: only allow known scanner binaries (prevents arbitrary program
+        # execution via the tool name) and validate the tool name shape.
+        allowed_tools = {
+            "nmap", "nikto", "sqlmap", "wpscan", "dirb", "gobuster",
+            "ffuf", "wfuzz", "nuclei", "masscan", "whatweb", "nuclei",
+            "dnsrecon", "amass", "subfinder", "httpx"
+        }
+        if tool not in allowed_tools:
+            return {"success": False,
+                    "error": f"Tool '{tool}' not in allowlist: {sorted(allowed_tools)}"}
+
         if not self.is_tool_available(tool):
             return {"success": False, "error": f"{tool} not available"}
 
-        command = f"{tool} {options} {target}"
-        result = self.executor.execute(command, timeout=600)
+        if not target or any(c.isspace() for c in target):
+            return {"success": False, "error": f"Invalid target: {target!r}"}
+
+        # Build argv list. options are tokenized; target is a single element, so
+        # even without strict target validation no shell injection is possible
+        # under shell=False.
+        cmd = [tool] + shlex.split(options) + [target]
+        result = self.executor.execute_argv(cmd, timeout=600)
 
         return {
             "success": result["success"],
             "output": result["output"],
             "error": result.get("error", ""),
-            "command": command
+            "command": " ".join(cmd)
         }
 
     def scan_target(self, target_id: str, target_manager, scan_profile: str = "quick") -> Dict:

@@ -5,6 +5,17 @@ import re
 import json
 from typing import Dict, List, Optional, Tuple
 
+# SECURITY: allowlist validation to prevent command injection (CWE-78)
+from ..utils.input_validator import validator, InputValidationError
+
+# Allowed shapes for metasploit-specific inputs. Using argv + shell=False already
+# removes OS-level shell injection; these patterns further constrain what can be
+# fed into msfconsole's own command interpreter.
+_MSF_SEARCH_RE = re.compile(r'^[A-Za-z0-9 _.:/\-]{1,200}$')
+_MSF_MODULE_RE = re.compile(r'^[A-Za-z0-9_/]{1,200}$')
+_MSF_FORMAT_RE = re.compile(r'^[A-Za-z0-9_\-]{1,32}$')
+
+
 class MetasploitIntegration:
     """Integrates with Metasploit Framework for exploit automation"""
 
@@ -39,12 +50,18 @@ class MetasploitIntegration:
         if not self.is_available():
             return []
 
+        # SECURITY: constrain the search term before embedding in the msf command
+        if not _MSF_SEARCH_RE.match(query or ""):
+            print(f"Rejected invalid Metasploit search query: {query!r}")
+            return []
+
         try:
-            # Use msfconsole to search
-            command = f'msfconsole -q -x "search {query}; exit"'
+            # argv list + shell=False: the whole "-x" value is one argument handed
+            # to msfconsole, never interpreted by the OS shell.
+            cmd = ["msfconsole", "-q", "-x", f"search {query}; exit"]
             result = subprocess.run(
-                command,
-                shell=True,
+                cmd,
+                shell=False,
                 capture_output=True,
                 text=True,
                 timeout=30
@@ -88,11 +105,16 @@ class MetasploitIntegration:
         if not self.is_available():
             return {}
 
+        # SECURITY: module paths are letters/digits/underscore/slash only
+        if not _MSF_MODULE_RE.match(exploit_path or ""):
+            print(f"Rejected invalid exploit path: {exploit_path!r}")
+            return {}
+
         try:
-            command = f'msfconsole -q -x "use {exploit_path}; info; exit"'
+            cmd = ["msfconsole", "-q", "-x", f"use {exploit_path}; info; exit"]
             result = subprocess.run(
-                command,
-                shell=True,
+                cmd,
+                shell=False,
                 capture_output=True,
                 text=True,
                 timeout=30
@@ -149,16 +171,30 @@ class MetasploitIntegration:
         if not self.is_available():
             return {'success': False, 'error': 'Metasploit not available'}
 
-        # Build msfvenom command
-        command = f"msfvenom -p {payload_type} LHOST={lhost} LPORT={lport} -f {format}"
+        # SECURITY: validate every value before building the argv list
+        try:
+            if not _MSF_MODULE_RE.match(payload_type or ""):
+                raise InputValidationError(f"Invalid payload type: {payload_type!r}")
+            lhost = validator.validate_target(lhost)
+            lport = validator.validate_port(str(lport))
+            if not _MSF_FORMAT_RE.match(format or ""):
+                raise InputValidationError(f"Invalid format: {format!r}")
+            if encoder is not None and not _MSF_MODULE_RE.match(encoder):
+                raise InputValidationError(f"Invalid encoder: {encoder!r}")
+        except InputValidationError as e:
+            return {'success': False, 'error': f'Input validation failed: {e}'}
 
+        # Build argv list (no shell). LHOST/LPORT are separate arguments; their
+        # values were validated to be an IP/host and a port number.
+        cmd = ["msfvenom", "-p", payload_type,
+               f"LHOST={lhost}", f"LPORT={lport}", "-f", format]
         if encoder:
-            command += f" -e {encoder}"
+            cmd += ["-e", encoder]
 
         try:
             result = subprocess.run(
-                command,
-                shell=True,
+                cmd,
+                shell=False,
                 capture_output=True,
                 timeout=60
             )
@@ -167,14 +203,14 @@ class MetasploitIntegration:
                 'success': result.returncode == 0,
                 'payload': result.stdout,
                 'error': result.stderr.decode() if result.stderr else '',
-                'command': command
+                'command': " ".join(cmd)
             }
 
         except Exception as e:
             return {
                 'success': False,
                 'error': str(e),
-                'command': command
+                'command': " ".join(cmd)
             }
 
     def list_payloads(self, platform: str = None) -> List[str]:
@@ -191,10 +227,9 @@ class MetasploitIntegration:
             return []
 
         try:
-            command = "msfvenom --list payloads"
             result = subprocess.run(
-                command,
-                shell=True,
+                ["msfvenom", "--list", "payloads"],
+                shell=False,
                 capture_output=True,
                 text=True,
                 timeout=30
@@ -229,6 +264,16 @@ class MetasploitIntegration:
         Returns:
             Handler command to run in msfconsole
         """
+        # SECURITY: validate values before composing a command the operator may
+        # copy/paste into a shell. Reject anything outside the expected shapes.
+        if not _MSF_MODULE_RE.match(payload or ""):
+            return f"# Error: invalid payload {payload!r}"
+        try:
+            lhost = validator.validate_target(lhost)
+            lport = validator.validate_port(str(lport))
+        except InputValidationError as e:
+            return f"# Error: {e}"
+
         handler_command = f"""msfconsole -q -x "use exploit/multi/handler;
 set PAYLOAD {payload};
 set LHOST {lhost};
@@ -242,11 +287,16 @@ exploit -j"
         if not self.is_available():
             return []
 
+        # SECURITY: constrain the search term
+        if not _MSF_SEARCH_RE.match(query or ""):
+            print(f"Rejected invalid auxiliary search query: {query!r}")
+            return []
+
         try:
-            command = f'msfconsole -q -x "search type:auxiliary {query}; exit"'
+            cmd = ["msfconsole", "-q", "-x", f"search type:auxiliary {query}; exit"]
             result = subprocess.run(
-                command,
-                shell=True,
+                cmd,
+                shell=False,
                 capture_output=True,
                 text=True,
                 timeout=30
