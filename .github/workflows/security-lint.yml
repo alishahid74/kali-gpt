@@ -1,0 +1,31 @@
+name: Security Lint
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  shell-injection-lint:
+    name: Shell-injection lint + security tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install runtime dependencies
+        run: |
+          python -m pip install --upgrade pip
+          # Light deps needed to import the package during the security tests
+          pip install rich python-dotenv requests || true
+
+      - name: Lint for new shell=True command-injection sinks (CWE-78)
+        run: python3 scripts/lint_shell_exec.py
+
+      - name: Run security regression tests
+        run: python3 tests/test_security.py

@@ -19,6 +19,7 @@ Kali-GPT AI Agents v4.0
 import asyncio
 import subprocess
 import shutil
+import shlex
 import re
 import json
 from datetime import datetime
@@ -320,23 +321,33 @@ ACTION: [command] or DONE"""
         if not command or command.upper() == "DONE":
             return True, "Agent completed tasks"
         
-        # Validate command has valid tool
-        tool = command.split()[0].lower() if command else ""
-        
+        # SECURITY (CWE-78): the command is produced by the LLM agent and could be
+        # steered by indirect prompt injection. Split it into an argv list and run
+        # with shell=False so shell operators (; | & ` $()) in the model output are
+        # treated as literal arguments and cannot chain a second command.
+        try:
+            argv = shlex.split(command)
+        except ValueError as e:
+            return False, f"Could not parse command: {e}"
+
+        if not argv:
+            return False, "Empty command"
+
+        tool = argv[0]
         if not shutil.which(tool):
             return False, f"Tool not found: {tool}"
-        
+
         try:
             result = subprocess.run(
-                command, shell=True, capture_output=True, text=True, timeout=180
+                argv, shell=False, capture_output=True, text=True, timeout=180
             )
             output = result.stdout + result.stderr
             success = result.returncode == 0 or len(output) > 10
-            
+
             await self.memory.add_command(self.name, command, output, success)
-            
+
             return success, output
-        
+
         except subprocess.TimeoutExpired:
             return False, "Command timed out"
         except Exception as e:

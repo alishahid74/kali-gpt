@@ -38,6 +38,15 @@ from rich import box
 console = Console()
 logger = logging.getLogger(__name__)
 
+# SECURITY (CWE-78): reject targets containing shell metacharacters before they
+# are interpolated into the recon/scan shell pipelines in this module.
+_SHELL_METACHARS = set(';|&`$()<>\n\r\\"\'')
+
+
+def _target_shell_safe(value: str) -> bool:
+    """True if a target value has no shell metacharacters."""
+    return bool(value) and not any(c in _SHELL_METACHARS for c in value)
+
 
 def _warn(callback, message: str, exc: Exception = None):
     """Log recoverable scan errors without stopping the full bug bounty run."""
@@ -260,10 +269,16 @@ class BugBountyHunter:
         - Parameters
         """
         self.stats['scan_start'] = datetime.now()
-        
+
+        # SECURITY: validate the root target before it reaches any shell pipeline
+        if not _target_shell_safe(target):
+            if callback:
+                callback(f"✗ Rejected target with unsafe characters: {target!r}")
+            return self.assets
+
         if callback:
             callback(f"🔍 Starting reconnaissance on {target}")
-        
+
         # Phase 1: Subdomain enumeration
         if callback:
             callback("\n[Phase 1/5] 📡 Subdomain Enumeration")
