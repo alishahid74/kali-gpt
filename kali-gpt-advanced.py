@@ -6,6 +6,7 @@ Supports command execution, red team operations, and intelligent workflow automa
 
 import os
 import sys
+import re
 import subprocess
 import json
 import datetime
@@ -56,6 +57,22 @@ class KaliGPTAdvanced:
         self.last_response = None
         self.current_mode = "general"
         self.load_history()
+        self._clipboard_warned = False
+
+    def safe_copy(self, text):
+        """Copy to clipboard, degrading gracefully on headless systems.
+
+        Bare Kali installs (SSH / Docker / no X11 or Wayland) have no
+        clipboard backend, so pyperclip raises. Warn once and carry on
+        instead of letting it interrupt the workflow.
+        """
+        try:
+            pyperclip.copy(text)
+            self.console.print("[dim]✓ Copied to clipboard[/dim]")
+        except Exception:
+            if not self._clipboard_warned:
+                self.console.print("[dim]ℹ️  Clipboard unavailable (no xclip/xsel/wl-clipboard); skipping copy.[/dim]")
+                self._clipboard_warned = True
 
         # Security profiles with specialized system prompts
         self.security_profiles = {
@@ -161,10 +178,23 @@ class KaliGPTAdvanced:
 
     def execute_command(self, command: str, timeout: int = 30) -> Dict[str, any]:
         """Execute shell command with safety checks"""
-        # Dangerous commands that require extra confirmation
-        dangerous_keywords = ['rm -rf', 'dd if=', 'mkfs', ':(){:|:&};:', 'fork bomb', '> /dev/sda']
+        # Dangerous commands that require extra confirmation.
+        # Patterns are matched against a whitespace-normalized command so that
+        # flag-order / spacing variants (e.g. "rm  -fr", "rm --recursive --force")
+        # cannot slip past the warning.
+        normalized = re.sub(r'\s+', ' ', command.lower()).strip()
+        dangerous_patterns = [
+            r'\brm\b.*(-[a-z]*r[a-z]*f|-[a-z]*f[a-z]*r|--recursive|--force)',  # rm -rf / -fr / --force
+            r'\bdd\b.*\bif=',                 # dd if=...
+            r'\bmkfs\b',                      # format filesystem
+            r':\(\)\s*\{.*\|.*&.*\}\s*;',     # fork bomb :(){ :|:& };:
+            r'fork bomb',
+            r'>\s*/dev/sd[a-z]',              # overwrite a disk device
+            r'\bchmod\b.*-R.*\s/\s*$',        # chmod -R ... /
+            r'\bmv\b.*\s/dev/null\b',         # mv <path> /dev/null
+        ]
 
-        if any(keyword in command.lower() for keyword in dangerous_keywords):
+        if any(re.search(pat, normalized) for pat in dangerous_patterns):
             self.console.print(Panel("[bold red]⚠️  DANGEROUS COMMAND DETECTED![/bold red]",
                                     title="Security Warning"))
             if not Confirm.ask("This command could be destructive. Are you ABSOLUTELY sure?"):
@@ -287,8 +317,7 @@ class KaliGPTAdvanced:
         self.console.print(Panel(md, title="🤖 AI Response", border_style="green"))
 
         if self.config.get("auto_copy", True):
-            pyperclip.copy(response)
-            self.console.print("[dim]✓ Copied to clipboard[/dim]")
+            self.safe_copy(response)
 
         self.last_response = response
         self.log_interaction(user_input, response)
@@ -314,7 +343,7 @@ Format: Show commands in code blocks."""
         self.console.print(Panel(md, title="⚡ Generated Command", border_style="cyan"))
 
         if self.config.get("auto_copy", True):
-            pyperclip.copy(response)
+            self.safe_copy(response)
 
         self.log_interaction(task, response)
 
@@ -420,8 +449,7 @@ Provide:
         self.console.print(Panel(md, title="📋 Payloads", border_style="green"))
 
         if self.config.get("auto_copy", True):
-            pyperclip.copy(response)
-            self.console.print("[dim]✓ Copied to clipboard[/dim]")
+            self.safe_copy(response)
 
         self.log_interaction(f"Payload: {payload_type}", response)
 

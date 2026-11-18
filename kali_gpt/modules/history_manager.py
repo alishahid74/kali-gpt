@@ -19,13 +19,24 @@ class HistoryManager:
         self.interaction_logs = self.load_interaction_logs()
 
     def load_conversation_history(self) -> List[Dict]:
-        """Load conversation history from file"""
+        """Load conversation history from file.
+
+        Tolerates both the bare-list format written here and the
+        ``{"history": [...]}`` wrapper written by kali-gpt-advanced.py,
+        which shares the same ~/.kali-gpt/conversation_history.json file.
+        Always returns a list so downstream slicing never fails.
+        """
         if self.conversation_file.exists():
             try:
                 with open(self.conversation_file, 'r') as f:
-                    return json.load(f)
-            except json.JSONDecodeError:
+                    data = json.load(f)
+            except (json.JSONDecodeError, OSError):
                 return []
+            if isinstance(data, dict):
+                data = data.get("history", [])
+            if isinstance(data, list):
+                return data
+            return []
         return []
 
     def save_conversation_history(self):
