@@ -1868,10 +1868,14 @@ async def s3_bucket_scan(ai):
     console.print("\n[bold yellow]🔍 S3 Bucket Scanner[/bold yellow]\n")
     
     bucket = Prompt.ask("Bucket name (or keyword to search)")
-    
+
     if not bucket:
         return
-    
+
+    if not shell_safe(bucket):
+        console.print("[red]✗ Rejected bucket name with unsafe characters[/red]")
+        return
+
     console.print(f"\n[cyan]Checking bucket: {bucket}[/cyan]\n")
     
     # Try direct access
@@ -2076,7 +2080,11 @@ async def hash_crack_menu(ai):
     hash_value = Prompt.ask("Hash to crack")
     if not hash_value:
         return
-    
+
+    if not shell_safe(hash_value):
+        console.print("[red]✗ Rejected hash with unsafe characters[/red]")
+        return
+
     # Identify hash
     console.print(f"\n[cyan]Analyzing hash: {hash_value[:50]}...[/cyan]\n")
     
