@@ -517,12 +517,31 @@ def sanitize_command(cmd: str, target: str = None) -> str:
     words = cmd.split()
     if not words:
         return ""
-    
+
     # First word must be a known tool
-    first_word = words[0].lower()
+    first_word = words[0].lower().strip('`"\':,')
     if first_word not in VALID_TOOLS:
-        return cmd  # Return as-is, let validation handle it
-    
+        # Small local models frequently prefix the real command with filler,
+        # e.g. "Use nmap ...", "Run the command: curl ...", "I'll use gobuster".
+        # Drop leading plain-word tokens (letters, optional trailing colon)
+        # until the first recognized tool, so the command is still extracted
+        # instead of being thrown away as "Incomplete". Stop as soon as a token
+        # looks like an argument (flag/path/url/number) so we never grab a
+        # generic tool word out of the middle of a sentence.
+        tool_idx = None
+        for j, w in enumerate(words):
+            if w.lower().strip('`"\':,') in VALID_TOOLS:
+                tool_idx = j
+                break
+            if not re.match(r"^[A-Za-z']+:?$", w) or j >= 5:
+                break
+        if tool_idx and tool_idx > 0:
+            words = words[tool_idx:]
+            first_word = words[0].lower().strip('`"\':,')
+        if first_word not in VALID_TOOLS:
+            return cmd  # Return as-is, let validation handle it
+
+    words[0] = words[0].strip('`"\':,')
     clean_parts = [words[0]]
     skip_next = False
     
@@ -590,6 +609,34 @@ def is_valid_command(action):
         return False
     first = action.split()[0].lower().strip('`"\'')
     return first in VALID_TOOLS and first not in DESCRIPTION_WORDS
+
+
+def extract_command(resp: str, target: str = None):
+    """Best-effort extraction of a runnable command from an LLM response.
+
+    Scans every line (not just 'ACTION:' lines) so commands that the model
+    put in a code block, a bullet, or a plain sentence are still recovered
+    before the agent resorts to its canned fallback list. Returns the first
+    valid, target-bearing command found, or None.
+    """
+    if not resp:
+        return None
+    for line in resp.split('\n'):
+        line = line.strip().strip('`').strip()
+        if not line:
+            continue
+        # drop markdown bullets / list numbering ("- ", "* ", "1. ", "2) ")
+        line = re.sub(r'^[\-\*•\d\.\)\s]+', '', line).strip()
+        up = line.upper()
+        if up.startswith(('THOUGHT:', 'OBSERVATION:', 'INPUT:', 'NOTE:')):
+            continue
+        if up.startswith('ACTION:'):
+            line = line.split(':', 1)[1].strip()
+        line = line.strip('`"\'')
+        cand = add_target_if_missing(sanitize_command(line, target), target)
+        if is_valid_command(cand) and len(cand.split()) > 1:
+            return cand
+    return None
 
 
 def add_target_if_missing(cmd, target):
@@ -682,8 +729,8 @@ def show_banner():
 ╚═╝  ╚═╝╚═╝  ╚═╝╚══════╝╚═╝       ╚═════╝ ╚═╝        ╚═╝   
 [/bold cyan]
 [bold green]    🤖 KALI-GPT v4.1 - Ultimate AI Pentest Framework[/bold green]
-[cyan]    220+ Tools | 12 Agents | API Server | Bug Bounty | 100% FREE[/cyan]
-[dim]    220+ Tools | 12 Agents | Cloud/CTF/Browser | 100% FREE[/dim]
+[cyan]    220+ Tools | 12 Agents | API Server | Bug Bounty[/cyan]
+[dim]    Cloud / CTF / Browser automation | 100% FREE[/dim]
 """
     console.print(banner)
 
@@ -934,6 +981,16 @@ Always include {target}!"""
                         w = potential.split()[0] if potential else "?"
                         console.print(f"[yellow]✗ Incomplete: {w}[/yellow]")
             
+            # Second pass: the model didn't produce a clean ACTION: line, but
+            # it may have put a usable command elsewhere (code block, bullet,
+            # mid-sentence). Recover it before resorting to the canned list so
+            # the run stays AI-driven.
+            if not action:
+                recovered = extract_command(resp, self.target)
+                if recovered and recovered not in self.history:
+                    action = recovered
+                    console.print(f"[green]✓ {action.split()[0]}[/green] [dim](recovered)[/dim]")
+
             # Fallback
             if not action:
                 while self.fb_idx < len(self.fallbacks):
