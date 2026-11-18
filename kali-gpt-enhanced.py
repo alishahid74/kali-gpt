@@ -211,17 +211,21 @@ class KaliGPTEnhanced:
         # Generate command
         result = self.ai.generate_command(task, target)
 
-        # Display result
-        self.console.print(Panel(Markdown(result['full_response']), title="Generated Command", border_style="cyan"))
+        # Display result. generate_command() returns 'command' + 'explanation';
+        # build the panel from those (there is no 'full_response' key).
+        command = result.get('command', '')
+        explanation = result.get('explanation', '')
+        display = f"```bash\n{command}\n```\n\n{explanation}" if command else explanation
+        self.console.print(Panel(Markdown(display), title="Generated Command", border_style="cyan"))
 
         # Ask if user wants to execute
-        if result['command'] and self.menu.confirm("Execute this command?"):
-            exec_result = self.executor.execute(result['command'])
+        if command and self.menu.confirm("Execute this command?"):
+            exec_result = self.executor.execute(command)
             self.console.print(Panel(exec_result['output'], title="Output", border_style="green" if exec_result['success'] else "red"))
 
             # AI analysis of output
             if exec_result['success']:
-                analysis = self.ai.analyze_output(result['command'], exec_result['output'])
+                analysis = self.ai.analyze_output(command, exec_result['output'])
                 self.console.print(Panel(Markdown(analysis), title="AI Analysis", border_style="yellow"))
 
     def execute_with_analysis(self):

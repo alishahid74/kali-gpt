@@ -1,0 +1,18 @@
+# Optional dependencies — enable extra features of the enhanced/autonomous
+# entry points. The code guards these imports and degrades gracefully when
+# they are missing, so install only what you need.
+#
+#   pip install -r requirements-optional.txt
+
+# REST API server (menu option "a") and web dashboard
+fastapi>=0.100.0
+uvicorn>=0.23.0
+python-multipart>=0.0.6
+websockets>=11.0
+
+# Scan scheduler (cron-style scheduling)
+croniter>=1.4.0
+
+# Browser automation agent
+selenium>=4.10.0
+playwright>=1.35.0

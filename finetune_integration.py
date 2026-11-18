@@ -482,4 +482,7 @@ async def finetune_menu(attack_tree=None):
 # Standalone test
 if __name__ == "__main__":
     import asyncio
-    asyncio.run(finetune_menu())
+    try:
+        asyncio.run(finetune_menu())
+    except (KeyboardInterrupt, EOFError):
+        print("\nExiting.")

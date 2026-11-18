@@ -1611,9 +1611,16 @@ async def main():
                     import subprocess
                     subprocess.Popen(["python3", "kali_gpt/api_server.py"])
                 
+        except EOFError:
+            # stdin closed (piped input / Ctrl-D) — exit cleanly
+            console.print("\n[cyan]Bye![/cyan]\n")
+            break
         except KeyboardInterrupt:
             console.print("\n")
-            if Confirm.ask("Exit?", default=False):
+            try:
+                if Confirm.ask("Exit?", default=False):
+                    break
+            except EOFError:
                 break
 
 
@@ -2499,7 +2506,8 @@ def show_tool_info():
 # ============================================================================
 
 if __name__ == "__main__":
-    asyncio.run(main())
-if __name__ == '__main__':
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except (KeyboardInterrupt, EOFError):
+        print("\nBye!")
 

@@ -19,6 +19,20 @@ client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 console = Console()
 log_file = os.path.expanduser("~/.kali_gpt_logs.txt")
 
+def safe_copy(text):
+    """Copy to clipboard, degrading gracefully on headless systems.
+
+    On a bare Kali install (SSH, Docker, no X/Wayland) pyperclip has no
+    copy/paste backend and raises PyperclipException. That must not crash
+    the assistant, so swallow the error and tell the user once.
+    """
+    try:
+        pyperclip.copy(text)
+        return True
+    except Exception:
+        console.print("[dim]ℹ️  Clipboard unavailable (no xclip/xsel/wl-clipboard); skipping copy.[/dim]")
+        return False
+
 def log_interaction(user_input, ai_response):
     with open(log_file, "a") as f:
         f.write(f"\n\n[{datetime.datetime.now()}] USER: {user_input}\nGPT: {ai_response}\n")
@@ -56,27 +70,27 @@ def main():
             user_input = Prompt.ask("[bold yellow]Enter your question[/bold yellow]")
             response = ask_gpt(user_input)
             console.print(Panel.fit(response, title="Kali GPT Response", subtitle="Copied to clipboard"))
-            pyperclip.copy(response)
+            safe_copy(response)
             log_interaction(user_input, response)
             last_response = response
         elif choice == "2":
             payload_type = Prompt.ask("What payload? (e.g., reverse shell, msfvenom, bash)")
             response = ask_gpt(f"Generate a {payload_type} payload for Kali Linux")
             console.print(Panel.fit(response, title="Payload", subtitle="Copied to clipboard"))
-            pyperclip.copy(response)
+            safe_copy(response)
             log_interaction(payload_type, response)
             last_response = response
         elif choice == "3":
             tool_name = Prompt.ask("Which tool? (e.g., Nmap, BurpSuite, Hydra)")
             response = ask_gpt(f"Explain how to use {tool_name} with examples")
             console.print(Panel.fit(response, title="Tool Explanation", subtitle="Copied to clipboard"))
-            pyperclip.copy(response)
+            safe_copy(response)
             log_interaction(tool_name, response)
             last_response = response
         elif choice == "4":
             if last_response:
                 console.print(Panel.fit(last_response, title="Last Response", subtitle="Re-copied to clipboard"))
-                pyperclip.copy(last_response)
+                safe_copy(last_response)
             else:
                 console.print("[red]No previous response to show[/red]")
         elif choice == "5":
@@ -84,4 +98,7 @@ def main():
             break
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except (EOFError, KeyboardInterrupt):
+        console.print("\n[bold cyan]Exiting Kali GPT. Stay safe![/bold cyan]")
